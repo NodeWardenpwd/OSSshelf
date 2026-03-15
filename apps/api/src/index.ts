@@ -14,14 +14,15 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', logger());
 app.use('*', prettyJSON());
-app.use('*', secureHeaders());
 app.use('*', cors({
-  origin: ['*'],
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PROPFIND', 'MKCOL', 'COPY', 'MOVE'],
-  allowHeaders: ['Content-Type', 'Authorization', 'Depth'],
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PROPFIND', 'MKCOL', 'COPY', 'MOVE', 'HEAD'],
+  allowHeaders: ['Content-Type', 'Authorization', 'Depth', 'Destination', 'X-Requested-With'],
   exposeHeaders: ['Content-Length', 'Content-Range'],
   maxAge: 86400,
+  credentials: true,
 }));
+app.use('*', secureHeaders());
 
 app.use('*', errorHandler);
 
