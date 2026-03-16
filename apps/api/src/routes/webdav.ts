@@ -63,6 +63,8 @@ app.all('/*', async (c) => {
         headers: {
           Allow: 'OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, PROPFIND, MOVE, COPY',
           DAV: '1, 2',
+          'MS-Author-Via': 'DAV',
+          'Content-Length': '0',
         },
       });
     case 'PROPFIND':
@@ -98,10 +100,31 @@ function escapeXml(str: string): string {
 
 type FileRow = typeof files.$inferSelect;
 
-function buildPropfindXML(items: FileRow[], basePath: string): string {
-  const responses = items.map((file) => {
-    const href = `${basePath}${file.path}`;
-    return `
+function buildPropfindXML(items: FileRow[], basePath: string, isRoot: boolean = false): string {
+  const responses: string[] = [];
+  
+  if (isRoot) {
+    responses.push(`
+  <response>
+    <href>${escapeXml(basePath)}</href>
+    <propstat>
+      <prop>
+        <displayname></displayname>
+        <resourcetype><collection/></resourcetype>
+        <getlastmodified>${new Date().toUTCString()}</getlastmodified>
+        <creationdate>${new Date().toISOString()}</creationdate>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>`);
+  }
+  
+  items.forEach((file) => {
+    let href = file.path;
+    if (!href.startsWith('/')) href = '/' + href;
+    if (file.isFolder && !href.endsWith('/')) href += '/';
+    
+    responses.push(`
   <response>
     <href>${escapeXml(href)}</href>
     <propstat>
@@ -115,7 +138,7 @@ function buildPropfindXML(items: FileRow[], basePath: string): string {
       </prop>
       <status>HTTP/1.1 200 OK</status>
     </propstat>
-  </response>`;
+  </response>`);
   });
 
   return `<?xml version="1.0" encoding="utf-8"?>\n<multistatus xmlns="DAV:">${responses.join('')}\n</multistatus>`;
@@ -124,18 +147,19 @@ function buildPropfindXML(items: FileRow[], basePath: string): string {
 async function handlePropfind(c: AppContext, userId: string, path: string) {
   const depth = c.req.header('Depth') || '1';
   const db = getDb(c.env.DB);
+  const isRoot = path === '/' || path === '';
 
   let parentCondition;
   let parentFolder = null;
   
-  if (path === '/') {
+  if (isRoot) {
     parentCondition = isNull(files.parentId);
   } else {
     parentFolder = await findFileByPath(db, userId, path);
     if (parentFolder) {
       parentCondition = eq(files.parentId, parentFolder.id);
     } else {
-      return new Response(buildPropfindXML([], '/dav'), {
+      return new Response(buildPropfindXML([], '/', false), {
         status: 207,
         headers: { 'Content-Type': 'application/xml; charset=utf-8' },
       });
@@ -146,16 +170,22 @@ async function handlePropfind(c: AppContext, userId: string, path: string) {
     .where(and(eq(files.userId, userId), parentCondition, isNull(files.deletedAt))).all();
 
   if (depth === '0') {
-    if (path !== '/') {
+    if (isRoot) {
+      return new Response(buildPropfindXML([], '/', true), {
+        status: 207,
+        headers: { 'Content-Type': 'application/xml; charset=utf-8' },
+      });
+    } else {
       const current = await findFileByPath(db, userId, path);
       if (current) items.unshift(current);
-    } else {
-      const rootFolder = { id: 'root', path: '/', name: '', isFolder: true, size: 0, mimeType: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-      items.unshift(rootFolder as any);
+      return new Response(buildPropfindXML(items, '/', false), {
+        status: 207,
+        headers: { 'Content-Type': 'application/xml; charset=utf-8' },
+      });
     }
   }
 
-  return new Response(buildPropfindXML(items, '/dav'), {
+  return new Response(buildPropfindXML(items, '/', true), {
     status: 207,
     headers: { 'Content-Type': 'application/xml; charset=utf-8' },
   });
@@ -180,6 +210,17 @@ async function findFileByPath(db: ReturnType<typeof getDb>, userId: string, path
 
 async function handleGet(c: AppContext, userId: string, path: string, headOnly: boolean) {
   const db = getDb(c.env.DB);
+  
+  if (path === '/' || path === '') {
+    return new Response(headOnly ? null : 'Root Collection', {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html',
+        'Content-Length': '14',
+      },
+    });
+  }
+  
   const file = await findFileByPath(db, userId, path);
 
   if (!file) return new Response('Not Found', { status: 404 });
