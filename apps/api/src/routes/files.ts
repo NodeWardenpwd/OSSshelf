@@ -29,6 +29,45 @@ const moveFileSchema = z.object({
   targetParentId: z.string().nullable(),
 });
 
+// ── Preview (before authMiddleware, supports token query param) ─────────────
+app.get('/:id/preview', async (c) => {
+  let userId: string | undefined;
+  const authHeader = c.req.header('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    try {
+      const { verifyJWT } = await import('../lib/crypto');
+      const payload = await verifyJWT(token, c.env.JWT_SECRET);
+      if (payload?.userId) userId = payload.userId;
+    } catch { /* ignore */ }
+  }
+  if (!userId) {
+    const queryToken = c.req.query('token');
+    if (queryToken) {
+      try {
+        const { verifyJWT } = await import('../lib/crypto');
+        const payload = await verifyJWT(queryToken, c.env.JWT_SECRET);
+        if (payload?.userId) userId = payload.userId;
+      } catch { /* ignore */ }
+    }
+  }
+  if (!userId) return c.json({ success: false, error: { code: ERROR_CODES.UNAUTHORIZED, message: '未授权' } }, 401);
+  
+  const fileId = c.req.param('id');
+  const db = getDb(c.env.DB);
+  const encKey = c.env.JWT_SECRET || 'ossshelf-key';
+  const file = await db.select().from(files).where(and(eq(files.id, fileId), eq(files.userId, userId), isNull(files.deletedAt))).get();
+  if (!file) return c.json({ success: false, error: { code: ERROR_CODES.NOT_FOUND, message: '文件不存在' } }, 404);
+  if (file.isFolder) return c.json({ success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: '无法预览文件夹' } }, 400);
+  const previewable = file.mimeType?.startsWith('image/') || file.mimeType?.startsWith('video/') || file.mimeType?.startsWith('audio/') || file.mimeType === 'application/pdf' || file.mimeType?.startsWith('text/');
+  if (!previewable) return c.json({ success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: '该文件类型不支持预览' } }, 400);
+  const bucketConfig = await resolveBucketConfig(db, userId, encKey, file.bucketId, file.parentId);
+  const pvHeaders = { 'Content-Type': file.mimeType || 'application/octet-stream', 'Content-Length': file.size.toString(), 'Cache-Control': 'public, max-age=3600' };
+  if (bucketConfig) { const s3Res = await s3Get(bucketConfig, file.r2Key); return new Response(s3Res.body, { headers: pvHeaders }); }
+  if (c.env.FILES) { const obj = await c.env.FILES.get(file.r2Key); if (!obj) return c.json({ success: false, error: { code: ERROR_CODES.NOT_FOUND, message: '文件内容不存在' } }, 404); return new Response(obj.body, { headers: pvHeaders }); }
+  return c.json({ success: false, error: { code: 'NO_STORAGE', message: '存储桶未配置' } }, 500);
+});
+
 app.use('*', authMiddleware);
 
 // ── Upload ─────────────────────────────────────────────────────────────────
@@ -347,34 +386,6 @@ app.get('/:id/download', async (c) => {
   const dlHeaders = { 'Content-Type': file.mimeType || 'application/octet-stream', 'Content-Disposition': `attachment; filename="${encodeURIComponent(file.name)}"`, 'Content-Length': file.size.toString() };
   if (bucketConfig) { const s3Res = await s3Get(bucketConfig, file.r2Key); return new Response(s3Res.body, { headers: dlHeaders }); }
   if (c.env.FILES) { const obj = await c.env.FILES.get(file.r2Key); if (!obj) return c.json({ success: false, error: { code: ERROR_CODES.NOT_FOUND, message: '文件内容不存在' } }, 404); return new Response(obj.body, { headers: dlHeaders }); }
-  return c.json({ success: false, error: { code: 'NO_STORAGE', message: '存储桶未配置' } }, 500);
-});
-
-// ── Preview ────────────────────────────────────────────────────────────────
-app.get('/:id/preview', async (c) => {
-  let userId = c.get('userId');
-  if (!userId) {
-    const queryToken = c.req.query('token');
-    if (queryToken) {
-      try { 
-        const { verifyJWT } = await import('../lib/crypto'); 
-        const payload = await verifyJWT(queryToken, c.env.JWT_SECRET); 
-        if (payload?.userId) userId = payload.userId; 
-      } catch { /* ignore */ }
-    }
-    if (!userId) return c.json({ success: false, error: { code: ERROR_CODES.UNAUTHORIZED, message: '未授权' } }, 401);
-  }
-  const fileId = c.req.param('id');
-  const db = getDb(c.env.DB); const encKey = c.env.JWT_SECRET || 'ossshelf-key';
-  const file = await db.select().from(files).where(and(eq(files.id, fileId), eq(files.userId, userId), isNull(files.deletedAt))).get();
-  if (!file) return c.json({ success: false, error: { code: ERROR_CODES.NOT_FOUND, message: '文件不存在' } }, 404);
-  if (file.isFolder) return c.json({ success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: '无法预览文件夹' } }, 400);
-  const previewable = file.mimeType?.startsWith('image/') || file.mimeType?.startsWith('video/') || file.mimeType?.startsWith('audio/') || file.mimeType === 'application/pdf' || file.mimeType?.startsWith('text/');
-  if (!previewable) return c.json({ success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: '该文件类型不支持预览' } }, 400);
-  const bucketConfig = await resolveBucketConfig(db, userId, encKey, file.bucketId, file.parentId);
-  const pvHeaders = { 'Content-Type': file.mimeType || 'application/octet-stream', 'Content-Length': file.size.toString(), 'Cache-Control': 'public, max-age=3600' };
-  if (bucketConfig) { const s3Res = await s3Get(bucketConfig, file.r2Key); return new Response(s3Res.body, { headers: pvHeaders }); }
-  if (c.env.FILES) { const obj = await c.env.FILES.get(file.r2Key); if (!obj) return c.json({ success: false, error: { code: ERROR_CODES.NOT_FOUND, message: '文件内容不存在' } }, 404); return new Response(obj.body, { headers: pvHeaders }); }
   return c.json({ success: false, error: { code: 'NO_STORAGE', message: '存储桶未配置' } }, 500);
 });
 
