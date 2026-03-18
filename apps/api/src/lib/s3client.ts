@@ -551,7 +551,7 @@ export async function s3AbortMultipartUpload(config: S3BucketConfig, key: string
 
 /**
  * Upload an object to an S3-compatible bucket.
- * @param contentLength - Optional; when provided with non-streaming body, helps some S3 providers
+ * @param contentLength - Required for streaming bodies; many S3 providers require Content-Length header
  */
 export async function s3Put(
   config: S3BucketConfig,
@@ -564,8 +564,6 @@ export async function s3Put(
   const { url, host, canonicalUri } = buildObjectUrl(config, key);
   const region = config.region || 'us-east-1';
 
-  const isStreaming = body instanceof ReadableStream;
-
   // For streaming bodies we can't compute SHA256; use UNSIGNED-PAYLOAD for chunked uploads
   // Most S3-compatible providers accept this for PUT
   const payloadHash = 'UNSIGNED-PAYLOAD';
@@ -577,11 +575,10 @@ export async function s3Put(
     }
   }
 
-  // 注意：流式上传时不能将 content-length 包含在签名头中
-  // 因为 AWS Signature V4 要求签名头与实际请求头完全一致
-  // 流式传输时 fetch 会使用 Transfer-Encoding: chunked，不会发送 Content-Length
-  // 只有非流式 body 且明确提供 contentLength 时才添加到签名头
-  if (contentLength !== undefined && !isStreaming) {
+  // 如果提供了 contentLength，必须在签名头和请求头中都包含
+  // AWS Signature V4 要求签名头与实际请求头完全一致
+  // 许多 S3 兼容存储要求必须有 Content-Length 头
+  if (contentLength !== undefined) {
     extraHeaders['content-length'] = String(contentLength);
   }
 
@@ -599,16 +596,9 @@ export async function s3Put(
     region,
   });
 
-  // 对于流式上传，不添加 Content-Length 头，让 fetch 使用 chunked encoding
-  // 对于非流式上传，如果提供了 contentLength，添加到请求头
-  const requestHeaders: Record<string, string> = { ...signed.headers };
-  if (contentLength !== undefined && !isStreaming) {
-    requestHeaders['Content-Length'] = String(contentLength);
-  }
-
   const res = await fetch(signed.url, {
     method: 'PUT',
-    headers: requestHeaders,
+    headers: signed.headers,
     body: body as BodyInit,
   });
 
