@@ -600,108 +600,82 @@ app.get('/stats', authMiddleware, async (c) => {
   const userId = c.get('userId')!;
   const db = getDb(c.env.DB);
 
-  const { isNull, isNotNull, eq: deq, and, count, sum } = await import('drizzle-orm');
-  const { files } = await import('../db');
+  const { isNull, isNotNull, eq: deq, and, count, sum, sql } = await import('drizzle-orm');
+  const { files, users, storageBuckets } = await import('../db');
 
-  const activeFiles = await db
-    .select()
+  const [activeStats] = await db
+    .select({
+      fileCount: sql<number>`sum(case when ${files.isFolder} = 0 then 1 else 0 end)`,
+      folderCount: sql<number>`sum(case when ${files.isFolder} = 1 then 1 else 0 end)`,
+      totalSize: sum(files.size),
+    })
     .from(files)
-    .where(and(deq(files.userId, userId), isNull(files.deletedAt)))
-    .all();
+    .where(and(deq(files.userId, userId), isNull(files.deletedAt)));
 
-  const fileCount = activeFiles.filter((f) => !f.isFolder).length;
-  const folderCount = activeFiles.filter((f) => f.isFolder).length;
-  const trashCount = await db
-    .select()
+  const [trashStats] = await db
+    .select({ count: count() })
     .from(files)
-    .where(and(deq(files.userId, userId), isNotNull(files.deletedAt)))
-    .all()
-    .then((r) => r.length);
+    .where(and(deq(files.userId, userId), isNotNull(files.deletedAt)));
 
-  const recentFiles = activeFiles
-    .filter((f) => !f.isFolder)
-    .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
-    .slice(0, 10);
+  const recentFiles = await db
+    .select({
+      id: files.id,
+      name: files.name,
+      size: files.size,
+      mimeType: files.mimeType,
+      createdAt: files.createdAt,
+      isFolder: files.isFolder,
+    })
+    .from(files)
+    .where(and(deq(files.userId, userId), isNull(files.deletedAt), deq(files.isFolder, false)))
+    .orderBy(sql`${files.createdAt} desc`)
+    .limit(10);
+
+  const typeBreakdownRows = await db
+    .select({
+      category: sql<string>`
+        case 
+          when ${files.mimeType} like 'image/%' then 'image'
+          when ${files.mimeType} like 'video/%' then 'video'
+          when ${files.mimeType} like 'audio/%' then 'audio'
+          when ${files.mimeType} = 'application/pdf' then 'pdf'
+          when ${files.mimeType} like 'text/%' then 'text'
+          when ${files.mimeType} in ('application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.oasis.opendocument.text') then 'document'
+          when ${files.mimeType} in ('application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.oasis.opendocument.spreadsheet', 'text/csv') then 'spreadsheet'
+          when ${files.mimeType} in ('application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.oasis.opendocument.presentation') then 'presentation'
+          when ${files.mimeType} in ('application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed', 'application/x-tar', 'application/gzip', 'application/x-bzip2') then 'archive'
+          when ${files.mimeType} in ('application/javascript', 'application/typescript', 'application/json', 'application/xml', 'application/x-sh', 'application/x-python') or ${files.mimeType} like '%script%' then 'code'
+          else 'other'
+        end
+      `,
+      totalSize: sum(files.size),
+    })
+    .from(files)
+    .where(and(deq(files.userId, userId), isNull(files.deletedAt), deq(files.isFolder, false)))
+    .groupBy(sql`1`);
 
   const typeBreakdown: Record<string, number> = {};
-  for (const f of activeFiles.filter((f) => !f.isFolder)) {
-    const mime = f.mimeType || '';
-    let category: string;
-
-    if (mime.startsWith('image/')) {
-      category = 'image';
-    } else if (mime.startsWith('video/')) {
-      category = 'video';
-    } else if (mime.startsWith('audio/')) {
-      category = 'audio';
-    } else if (mime === 'application/pdf') {
-      category = 'pdf';
-    } else if (mime.startsWith('text/')) {
-      category = 'text';
-    } else if (
-      [
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.oasis.opendocument.text',
-      ].includes(mime)
-    ) {
-      category = 'document';
-    } else if (
-      [
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.oasis.opendocument.spreadsheet',
-        'text/csv',
-      ].includes(mime)
-    ) {
-      category = 'spreadsheet';
-    } else if (
-      [
-        'application/vnd.ms-powerpoint',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'application/vnd.oasis.opendocument.presentation',
-      ].includes(mime)
-    ) {
-      category = 'presentation';
-    } else if (
-      [
-        'application/zip',
-        'application/x-rar-compressed',
-        'application/x-7z-compressed',
-        'application/x-tar',
-        'application/gzip',
-        'application/x-bzip2',
-      ].includes(mime)
-    ) {
-      category = 'archive';
-    } else if (
-      [
-        'application/javascript',
-        'application/typescript',
-        'application/json',
-        'application/xml',
-        'application/x-sh',
-        'application/x-python',
-      ].includes(mime) ||
-      mime.includes('script')
-    ) {
-      category = 'code';
-    } else {
-      category = 'other';
-    }
-
-    typeBreakdown[category] = (typeBreakdown[category] || 0) + f.size;
+  for (const row of typeBreakdownRows) {
+    typeBreakdown[row.category] = Number(row.totalSize ?? 0);
   }
 
-  const { users: usersTable, storageBuckets } = await import('../db');
-  const userRow = await db.select().from(usersTable).where(deq(usersTable.id, userId)).get();
+  const userRow = await db.select().from(users).where(deq(users.id, userId)).get();
 
   const bucketRows = await db
-    .select()
+    .select({
+      id: storageBuckets.id,
+      name: storageBuckets.name,
+      provider: storageBuckets.provider,
+      storageUsed: storageBuckets.storageUsed,
+      storageQuota: storageBuckets.storageQuota,
+      fileCount: storageBuckets.fileCount,
+      isDefault: storageBuckets.isDefault,
+    })
     .from(storageBuckets)
     .where(and(deq(storageBuckets.userId, userId), deq(storageBuckets.isActive, true)))
     .all();
-  const bucketStorageUsed = bucketRows.reduce((sum, b) => sum + (b.storageUsed ?? 0), 0);
+
+  const bucketStorageUsed = bucketRows.reduce((acc, b) => acc + (b.storageUsed ?? 0), 0);
   const totalStorageUsed = Math.max(userRow?.storageUsed ?? 0, bucketStorageUsed);
 
   const bucketBreakdown = bucketRows.map((b) => ({
@@ -717,9 +691,9 @@ app.get('/stats', authMiddleware, async (c) => {
   return c.json({
     success: true,
     data: {
-      fileCount,
-      folderCount,
-      trashCount,
+      fileCount: Number(activeStats?.fileCount ?? 0),
+      folderCount: Number(activeStats?.folderCount ?? 0),
+      trashCount: Number(trashStats?.count ?? 0),
       storageUsed: totalStorageUsed,
       storageQuota: userRow?.storageQuota ?? 10737418240,
       recentFiles,
