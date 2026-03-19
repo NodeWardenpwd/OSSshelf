@@ -576,6 +576,15 @@ app.get('/devices', authMiddleware, async (c) => {
   const userId = c.get('userId')!;
   const db = getDb(c.env.DB);
 
+  // 清理过期设备（7天未活跃）
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  await db
+    .delete(userDevices)
+    .where(and(
+      eq(userDevices.userId, userId),
+      lt(userDevices.lastActive, sevenDaysAgo)
+    ));
+
   const devices = await db
     .select()
     .from(userDevices)

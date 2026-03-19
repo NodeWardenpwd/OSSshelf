@@ -153,7 +153,7 @@ export function DeviceManager() {
                 className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
                 onClick={() => {
                   if (confirm('确定要注销此设备吗？')) {
-                    deleteMutation.mutate(device.id);
+                    deleteMutation.mutate(device.deviceId);
                   }
                 }}
                 disabled={deleteMutation.isPending}
