@@ -13,7 +13,7 @@ import { Hono, Context } from 'hono';
 import { eq, and, isNull } from 'drizzle-orm';
 import { getDb, files, users } from '../db';
 import { s3Put, s3Get, s3Delete } from '../lib/s3client';
-import { resolveBucketConfig, updateBucketStats } from '../lib/bucketResolver';
+import { resolveBucketConfig, updateBucketStats, checkBucketQuota } from '../lib/bucketResolver';
 import { verifyPassword, getEncryptionKey } from '../lib/crypto';
 import type { Env, Variables } from '../types/env';
 
@@ -326,6 +326,19 @@ async function handlePut(c: AppContext, userId: string, path: string) {
   const r2Key = `files/${userId}/${fileId}/${fileName}`;
 
   const bucketCfgP = await resolveBucketConfig(db, userId, encKeyP, null, parentId);
+
+  // 配额检查（仅对新文件；覆盖时按差额，此处简化为全量检查）
+  if (!existingFile) {
+    const userRow = await db.select().from(users).where(eq(users.id, userId)).get();
+    if (userRow && userRow.storageUsed + body.byteLength > userRow.storageQuota) {
+      return new Response('Insufficient Storage', { status: 507 });
+    }
+    if (bucketCfgP) {
+      const quotaErr = await checkBucketQuota(db, bucketCfgP.id, body.byteLength);
+      if (quotaErr) return new Response(quotaErr, { status: 507 });
+    }
+  }
+
   if (bucketCfgP) {
     await s3Put(bucketCfgP, r2Key, body, mimeType, { userId, originalName: fileName });
   } else if (c.env.FILES) {
@@ -355,6 +368,16 @@ async function handlePut(c: AppContext, userId: string, path: string) {
       deletedAt: null,
     });
     if (bucketCfgP) await updateBucketStats(db, bucketCfgP.id, body.byteLength, 1);
+
+    // 更新用户存储用量（仅新文件；覆盖写时大小差额由以下逻辑处理）
+    const userRow = await db.select().from(users).where(eq(users.id, userId)).get();
+    if (userRow) {
+      const sizeDelta = existingFile ? body.byteLength - existingFile.size : body.byteLength;
+      await db
+        .update(users)
+        .set({ storageUsed: Math.max(0, userRow.storageUsed + sizeDelta), updatedAt: now })
+        .where(eq(users.id, userId));
+    }
   }
 
   return new Response(null, { status: existingFile ? 204 : 201 });
@@ -420,6 +443,14 @@ async function handleDelete(c: AppContext, userId: string, path: string) {
     } else if (c.env.FILES) {
       await c.env.FILES.delete(file.r2Key);
     }
+    // 更新用户存储用量
+    const userRow = await db.select().from(users).where(eq(users.id, userId)).get();
+    if (userRow) {
+      await db
+        .update(users)
+        .set({ storageUsed: Math.max(0, userRow.storageUsed - file.size), updatedAt: new Date().toISOString() })
+        .where(eq(users.id, userId));
+    }
   }
   await db.delete(files).where(eq(files.id, file.id));
   return new Response(null, { status: 204 });
@@ -436,9 +467,18 @@ async function handleMove(c: AppContext, userId: string, path: string) {
   if (!file) return new Response('Not Found', { status: 404 });
 
   const newName = destPath.split('/').pop() || file.name;
+
+  // 解析目标路径的父级文件夹 ID，确保 parentId 与 path 保持一致
+  const destParentPath = destPath.lastIndexOf('/') > 0 ? destPath.slice(0, destPath.lastIndexOf('/')) : '/';
+  let destParentId: string | null = null;
+  if (destParentPath !== '/') {
+    const destParentFolder = await findFileByPath(db, userId, destParentPath);
+    destParentId = destParentFolder?.id ?? null;
+  }
+
   await db
     .update(files)
-    .set({ name: newName, path: destPath, updatedAt: new Date().toISOString() })
+    .set({ name: newName, path: destPath, parentId: destParentId, updatedAt: new Date().toISOString() })
     .where(eq(files.id, file.id));
 
   return new Response(null, { status: 201 });

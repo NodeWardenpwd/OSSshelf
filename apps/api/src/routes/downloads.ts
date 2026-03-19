@@ -10,7 +10,7 @@
  */
 
 import { Hono } from 'hono';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { getDb, downloadTasks, users, files, storageBuckets } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { ERROR_CODES, MAX_FILE_SIZE } from '@osshelf/shared';
@@ -59,6 +59,121 @@ function getFileNameFromUrl(url: string): string {
     return 'downloaded_file';
   }
 }
+
+// ── Shared download execution ─────────────────────────────────────────────
+interface RunDownloadParams {
+  db: ReturnType<typeof getDb>;
+  userId: string;
+  taskId: string;
+  task: { url: string; fileName: string; parentId: string | null; bucketId: string | null };
+  bucketConfig: import('../lib/s3client').S3BucketConfig;
+  env: Env;
+}
+
+async function runDownload({ db, userId, taskId, task, bucketConfig, env }: RunDownloadParams): Promise<void> {
+  const { url, fileName: resolvedFileName, parentId } = task;
+  let downloadedBytes = 0;
+  let totalSize = 0;
+  const now = new Date().toISOString();
+
+  try {
+    await db
+      .update(downloadTasks)
+      .set({ status: 'downloading', updatedAt: new Date().toISOString() })
+      .where(eq(downloadTasks.id, taskId));
+
+    const response = await fetch(url, { method: 'GET', headers: { 'User-Agent': 'OSSshelf/1.0' } });
+    if (!response.ok) throw new Error(`下载失败: HTTP ${response.status}`);
+
+    const contentLength = response.headers.get('Content-Length');
+    const fileSize = contentLength ? parseInt(contentLength, 10) : 0;
+
+    if (fileSize > MAX_FILE_SIZE) {
+      throw new Error(`文件大小超过限制（最大 ${MAX_FILE_SIZE / 1024 / 1024 / 1024}GB）`);
+    }
+
+    const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
+
+    // 重新查询最新配额状态，避免使用陈旧快照
+    const freshUser = await db.select().from(users).where(eq(users.id, userId)).get();
+    if (!freshUser) throw new Error('用户不存在');
+    if (freshUser.storageUsed + fileSize > freshUser.storageQuota) throw new Error('用户存储配额已满');
+
+    const quotaErr = await checkBucketQuota(db, bucketConfig.id, fileSize);
+    if (quotaErr) throw new Error(quotaErr);
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('无法读取响应内容');
+
+    const chunks: Uint8Array[] = [];
+    let lastProgressUpdate = Date.now();
+    const PROGRESS_UPDATE_INTERVAL = 1000;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      downloadedBytes += value.length;
+      const nowTs = Date.now();
+      if (nowTs - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
+        const progress = fileSize > 0 ? Math.round((downloadedBytes / fileSize) * 100) : 0;
+        await db
+          .update(downloadTasks)
+          .set({ progress, fileSize: downloadedBytes, updatedAt: new Date().toISOString() })
+          .where(eq(downloadTasks.id, taskId));
+        lastProgressUpdate = nowTs;
+      }
+    }
+
+    totalSize = downloadedBytes;
+    const fileData = new Uint8Array(totalSize);
+    let offset = 0;
+    for (const chunk of chunks) { fileData.set(chunk, offset); offset += chunk.length; }
+
+    const fileId = crypto.randomUUID();
+    const r2Key = `files/${userId}/${fileId}/${resolvedFileName}`;
+    const path = parentId ? `${parentId}/${resolvedFileName}` : `/${resolvedFileName}`;
+
+    await s3Put(bucketConfig, r2Key, fileData, contentType, undefined, totalSize);
+
+    await db.insert(files).values({
+      id: fileId,
+      userId,
+      parentId: parentId || null,
+      name: resolvedFileName,
+      path,
+      type: 'file',
+      size: totalSize,
+      r2Key,
+      mimeType: contentType,
+      hash: null,
+      isFolder: false,
+      bucketId: bucketConfig.id,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    });
+
+    await db
+      .update(users)
+      .set({ storageUsed: freshUser.storageUsed + totalSize, updatedAt: now })
+      .where(eq(users.id, userId));
+
+    await updateBucketStats(db, bucketConfig.id, totalSize, 1);
+
+    await db
+      .update(downloadTasks)
+      .set({ status: 'completed', progress: 100, fileSize: totalSize, updatedAt: now, completedAt: now })
+      .where(eq(downloadTasks.id, taskId));
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '下载失败';
+    await db
+      .update(downloadTasks)
+      .set({ status: 'failed', errorMessage, fileSize: downloadedBytes || null, updatedAt: new Date().toISOString() })
+      .where(eq(downloadTasks.id, taskId));
+  }
+}
+
 
 app.post('/create', async (c) => {
   const userId = c.get('userId')!;
@@ -116,140 +231,10 @@ app.post('/create', async (c) => {
     userAgent: getUserAgent(c),
   });
 
+  // 在后台执行下载，复用 runDownload 函数（与 retry 共享逻辑）
   c.executionCtx.waitUntil(
-    (async () => {
-      let downloadedBytes = 0;
-      let totalSize = 0;
-      try {
-        await db
-          .update(downloadTasks)
-          .set({ status: 'downloading', updatedAt: new Date().toISOString() })
-          .where(eq(downloadTasks.id, taskId));
-
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'User-Agent': 'OSSshelf/1.0',
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`下载失败: HTTP ${response.status}`);
-        }
-
-        const contentLength = response.headers.get('Content-Length');
-        const fileSize = contentLength ? parseInt(contentLength, 10) : 0;
-
-        if (fileSize > MAX_FILE_SIZE) {
-          throw new Error(`文件大小超过限制（最大 ${MAX_FILE_SIZE / 1024 / 1024 / 1024}GB）`);
-        }
-
-        const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
-
-        if (user.storageUsed + fileSize > user.storageQuota) {
-          throw new Error('用户存储配额已满');
-        }
-
-        const quotaErr = await checkBucketQuota(db, bucketConfig.id, fileSize);
-        if (quotaErr) {
-          throw new Error(quotaErr);
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('无法读取响应内容');
-        }
-
-        // 先将所有数据收集到内存，再一次性上传
-        // 这样可以使用 Uint8Array 而非 ReadableStream，确保 Content-Length 头正确设置
-        const chunks: Uint8Array[] = [];
-        let lastProgressUpdate = Date.now();
-        const PROGRESS_UPDATE_INTERVAL = 1000;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          chunks.push(value);
-          downloadedBytes += value.length;
-
-          const now = Date.now();
-          if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
-            const progress = fileSize > 0 ? Math.round((downloadedBytes / fileSize) * 100) : 0;
-            await db
-              .update(downloadTasks)
-              .set({ progress, fileSize: downloadedBytes, updatedAt: new Date().toISOString() })
-              .where(eq(downloadTasks.id, taskId));
-            lastProgressUpdate = now;
-          }
-        }
-
-        totalSize = downloadedBytes;
-
-        // 合并所有 chunks 为单个 Uint8Array
-        const fileData = new Uint8Array(totalSize);
-        let offset = 0;
-        for (const chunk of chunks) {
-          fileData.set(chunk, offset);
-          offset += chunk.length;
-        }
-
-        // 使用 Uint8Array 上传，可以正确设置 Content-Length
-        const fileId = crypto.randomUUID();
-        const r2Key = `files/${userId}/${fileId}/${resolvedFileName}`;
-        const path = parentId ? `${parentId}/${resolvedFileName}` : `/${resolvedFileName}`;
-
-        await s3Put(bucketConfig, r2Key, fileData, contentType, undefined, totalSize);
-
-        await db.insert(files).values({
-          id: fileId,
-          userId,
-          parentId: parentId || null,
-          name: resolvedFileName,
-          path,
-          type: 'file',
-          size: totalSize,
-          r2Key,
-          mimeType: contentType,
-          hash: null,
-          isFolder: false,
-          bucketId: bucketConfig.id,
-          createdAt: now,
-          updatedAt: now,
-          deletedAt: null,
-        });
-
-        await db
-          .update(users)
-          .set({ storageUsed: user.storageUsed + totalSize, updatedAt: now })
-          .where(eq(users.id, userId));
-
-        await updateBucketStats(db, bucketConfig.id, totalSize, 1);
-
-        await db
-          .update(downloadTasks)
-          .set({
-            status: 'completed',
-            progress: 100,
-            fileSize: totalSize,
-            updatedAt: now,
-            completedAt: now,
-          })
-          .where(eq(downloadTasks.id, taskId));
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : '下载失败';
-        await db
-          .update(downloadTasks)
-          .set({
-            status: 'failed',
-            errorMessage,
-            fileSize: downloadedBytes || null,
-            updatedAt: new Date().toISOString(),
-          })
-          .where(eq(downloadTasks.id, taskId));
-      }
-    })()
-  );
+    runDownload({ db, userId, taskId, task: { url, fileName: resolvedFileName, parentId: parentId || null, bucketId: bucketConfig.id }, bucketConfig, env: c.env })
+  );;
 
   return c.json({
     success: true,
@@ -285,12 +270,13 @@ app.get('/list', async (c) => {
     .offset((page - 1) * limit)
     .all();
 
-  const total = await db
-    .select()
+  // 使用 COUNT(*) 避免全表扫描取长度（O(n)→O(1)）
+  const totalResult = await db
+    .select({ count: sql<number>`count(*)` })
     .from(downloadTasks)
     .where(and(...conditions))
-    .all()
-    .then((r) => r.length);
+    .get();
+  const total = Number(totalResult?.count ?? 0);
 
   return c.json({
     success: true,
@@ -459,17 +445,25 @@ app.post('/:taskId/retry', async (c) => {
     );
   }
 
+  const now = new Date().toISOString();
   await db
     .update(downloadTasks)
-    .set({
-      status: 'pending',
-      progress: 0,
-      errorMessage: null,
-      updatedAt: new Date().toISOString(),
-    })
+    .set({ status: 'pending', progress: 0, errorMessage: null, updatedAt: now })
     .where(eq(downloadTasks.id, taskId));
 
-  return c.json({ success: true, data: { message: '任务已重新排队' } });
+  // 重新触发下载任务（与 /create 中的 waitUntil 逻辑相同）
+  const encKey = getEncryptionKey(c.env);
+  const bucketConfig = task.bucketId
+    ? await resolveBucketConfig(db, userId, encKey, task.bucketId, task.parentId)
+    : null;
+
+  if (bucketConfig) {
+    c.executionCtx.waitUntil(
+      runDownload({ db, userId, taskId, task: { url: task.url, fileName: task.fileName, parentId: task.parentId, bucketId: task.bucketId }, bucketConfig, env: c.env })
+    );
+  }
+
+  return c.json({ success: true, data: { message: '任务已重新开始下载' } });
 });
 
 app.post('/:taskId/pause', async (c) => {

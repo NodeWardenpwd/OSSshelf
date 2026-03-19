@@ -35,6 +35,9 @@ async function verifyTokenFromQuery(
 
   try {
     const decoded = await verifyJWT(token, c.env.JWT_SECRET);
+    // 与 authMiddleware 保持一致：校验 KV session 是否仍有效（防止已注销的 token 仍可预览）
+    const session = await c.env.KV.get(`session:${token}`);
+    if (!session) return null;
     return decoded;
   } catch {
     return null;
