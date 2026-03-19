@@ -10,8 +10,8 @@
  */
 
 import { Hono } from 'hono';
-import { eq, and } from 'drizzle-orm';
-import { getDb, storageBuckets } from '../db';
+import { eq, and, isNull } from 'drizzle-orm';
+import { getDb, storageBuckets, files } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { ERROR_CODES } from '@osshelf/shared';
 import type { Env, Variables } from '../types/env';
@@ -75,13 +75,38 @@ app.get('/', async (c) => {
 
   const buckets = await db.select().from(storageBuckets).where(eq(storageBuckets.userId, userId)).all();
 
+  const activeFiles = await db
+    .select({ bucketId: files.bucketId, size: files.size, isFolder: files.isFolder })
+    .from(files)
+    .where(and(eq(files.userId, userId), isNull(files.deletedAt)))
+    .all();
+
+  const bucketStats = new Map<string, { storageUsed: number; fileCount: number }>();
+  for (const f of activeFiles.filter((f) => !f.isFolder)) {
+    const bucketId = f.bucketId || '__no_bucket__';
+    const stats = bucketStats.get(bucketId) || { storageUsed: 0, fileCount: 0 };
+    stats.storageUsed += f.size;
+    stats.fileCount += 1;
+    bucketStats.set(bucketId, stats);
+  }
+
   const sorted = [...buckets].sort((a, b) => {
     if (a.isDefault && !b.isDefault) return -1;
     if (!a.isDefault && b.isDefault) return 1;
     return (b.createdAt ?? '').localeCompare(a.createdAt ?? '');
   });
 
-  return c.json({ success: true, data: sorted.map(sanitize) });
+  const result = sorted.map((b) => {
+    const actualStats = bucketStats.get(b.id) || { storageUsed: 0, fileCount: 0 };
+    const sanitized = sanitize(b);
+    return {
+      ...sanitized,
+      storageUsed: actualStats.storageUsed,
+      fileCount: actualStats.fileCount,
+    };
+  });
+
+  return c.json({ success: true, data: result });
 });
 
 // ── GET /api/buckets/providers — static provider metadata ─────────────────
