@@ -17,6 +17,7 @@
 
 import axios from 'axios';
 import { useAuthStore } from '../stores/auth';
+import type { UploadedFile } from '@osshelf/shared';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -99,20 +100,6 @@ export interface PresignUploadOptions {
   skipParts?: number[];
 }
 
-export interface UploadedFile {
-  id: string;
-  name: string;
-  size: number;
-  mimeType: string | null;
-  path: string;
-  bucketId: string | null;
-  createdAt: string;
-}
-
-/**
- * Upload a file using presigned URLs (with multipart for large files).
- * Falls back to proxy upload if no S3 bucket is configured.
- */
 export async function presignUpload({
   file,
   parentId = null,
@@ -123,7 +110,6 @@ export async function presignUpload({
   taskId,
   skipParts,
 }: PresignUploadOptions): Promise<UploadedFile> {
-  // 每次上传调用独立的 CORS 检测状态，避免模块级单例在 Workers 复用实例时污染其他用户的上传
   const uploadCtx = { corsErrorDetected: false };
   if (file.size > MULTIPART_THRESHOLD) {
     return multipartUpload({ file, parentId, bucketId, onProgress, onFallback, signal, taskId, skipParts }, uploadCtx);

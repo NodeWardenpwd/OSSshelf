@@ -18,8 +18,8 @@ import { useFileStore, type ViewMode } from '@/stores/files';
 import { useAuthStore } from '@/stores/auth';
 import { filesApi, bucketsApi, permissionsApi, type StorageBucket } from '@/services/api';
 import { getPresignedDownloadUrl, presignUpload } from '@/services/presignUpload';
-import { uploadManager } from '@/services/uploadManager';
 import { useFileKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useFolderUpload } from '@/hooks/useFolderUpload';
 import { BreadcrumbNav, type BreadcrumbItem } from '@/components/ui/BreadcrumbNav';
 import { FilePreview } from '@/components/ui/FilePreview';
 import { RenameDialog } from '@/components/ui/RenameDialog';
@@ -274,6 +274,44 @@ export default function Files() {
   const { isDragActive, handleDragOver, handleDragLeave, handleDrop } = useFileDragDrop({
     folderId: folderId ?? null,
     setUploadProgresses,
+  });
+
+  const { uploadFilesWithRelativePath } = useFolderUpload({
+    currentFolderId: folderId ?? undefined,
+    onFileStart: (name, key) => setUploadProgresses((p) => ({ ...p, [key]: 0 })),
+    onFileProgress: (key, progress) => setUploadProgresses((p) => ({ ...p, [key]: progress })),
+    onFileDone: (key) => {
+      setUploadProgresses((p) => {
+        const n = { ...p };
+        delete n[key];
+        return n;
+      });
+    },
+    onFileError: (key, error) => {
+      setUploadProgresses((p) => {
+        const n = { ...p };
+        delete n[key];
+        return n;
+      });
+      toast({
+        title: '上传失败',
+        description: error?.response?.data?.error?.message || error?.message,
+        variant: 'destructive',
+      });
+    },
+    onAllDone: (stats) => {
+      if (stats) {
+        if (stats.failed === 0) {
+          toast({ title: '文件夹上传完成', description: `成功上传 ${stats.uploaded} 个文件` });
+        } else {
+          toast({
+            title: '文件夹上传完成（部分失败）',
+            description: `成功 ${stats.uploaded} 个，失败 ${stats.failed} 个`,
+            variant: 'destructive',
+          });
+        }
+      }
+    },
   });
 
   const handleDownload = useCallback(
@@ -732,119 +770,19 @@ export default function Files() {
               directory=""
               multiple
               onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                if (files.length === 0) return;
-
-                const rootFolderName = files[0] ? ((files[0] as any).webkitRelativePath as string).split('/')[0] : '';
-                const totalFiles = files.length;
-                const folderPathSet = new Set<string>();
-
-                for (const file of files) {
-                  const relativePath = (file as any).webkitRelativePath as string;
-                  if (relativePath) {
-                    const parts = relativePath.split('/');
-                    for (let i = 1; i < parts.length; i++) {
-                      folderPathSet.add(parts.slice(0, i).join('/'));
-                    }
-                  }
-                }
-
-                const sortedFolderPaths = [...folderPathSet].sort((a, b) => {
-                  return a.split('/').length - b.split('/').length;
-                });
-
+                const files = e.target.files;
+                if (!files || files.length === 0) return;
+                const rootFolderName = (files[0] as any).webkitRelativePath?.split('/')[0] || '文件夹';
+                const folderCount = new Set(
+                  Array.from(files)
+                    .map((f) => (f as any).webkitRelativePath?.split('/').slice(0, -1).join('/'))
+                    .filter(Boolean)
+                ).size;
                 toast({
                   title: `开始上传文件夹 "${rootFolderName}"`,
-                  description: `${folderPathSet.size} 个文件夹，${totalFiles} 个文件`,
+                  description: `${folderCount} 个文件夹，${files.length} 个文件`,
                 });
-
-                const folderIdMap = new Map<string, string>();
-                let uploadedCount = 0;
-                let failedCount = 0;
-
-                const createFoldersAndUpload = async () => {
-                  for (const folderPath of sortedFolderPaths) {
-                    const parts = folderPath.split('/');
-                    const name = parts[parts.length - 1];
-                    if (!name) continue;
-                    const parentPath = parts.slice(0, -1).join('/');
-                    const parentId = parentPath
-                      ? (folderIdMap.get(parentPath) ?? folderId ?? null)
-                      : (folderId ?? null);
-
-                    try {
-                      const res = await filesApi.createFolder(name, parentId);
-                      const createdFolderId = res.data.data?.id;
-                      if (createdFolderId) {
-                        folderIdMap.set(folderPath, createdFolderId);
-                        queryClient.invalidateQueries({ queryKey: ['files', parentId ?? undefined] });
-                      }
-                    } catch (err: any) {
-                      console.warn(
-                        `创建文件夹 "${folderPath}" 失败:`,
-                        err?.response?.data?.error?.message || err?.message
-                      );
-                    }
-                  }
-
-                  for (const file of files) {
-                    const relativePath = (file as any).webkitRelativePath as string;
-                    const parts = relativePath.split('/');
-                    const parentPath = parts.slice(0, -1).join('/');
-                    const parentId = parentPath
-                      ? (folderIdMap.get(parentPath) ?? folderId ?? null)
-                      : (folderId ?? null);
-
-                    const key = `${file.name}-${Date.now()}-${Math.random()}`;
-                    setUploadProgresses((p) => ({ ...p, [key]: 0 }));
-
-                    try {
-                      await presignUpload({
-                        file,
-                        parentId,
-                        onProgress: (progress) => setUploadProgresses((p) => ({ ...p, [key]: progress })),
-                      });
-                      uploadedCount++;
-                      setUploadProgresses((p) => {
-                        const n = { ...p };
-                        delete n[key];
-                        return n;
-                      });
-                      queryClient.invalidateQueries({ queryKey: ['files', parentId ?? undefined] });
-                    } catch (err: any) {
-                      failedCount++;
-                      setUploadProgresses((p) => {
-                        const n = { ...p };
-                        delete n[key];
-                        return n;
-                      });
-                      toast({
-                        title: `上传 "${file.name}" 失败`,
-                        description: err?.response?.data?.error?.message || err?.message,
-                        variant: 'destructive',
-                      });
-                    }
-                  }
-
-                  queryClient.invalidateQueries({ queryKey: ['files'] });
-                  queryClient.invalidateQueries({ queryKey: ['files', folderId] });
-                  queryClient.invalidateQueries({ queryKey: ['stats'] });
-
-                  if (failedCount === 0) {
-                    toast({
-                      title: `文件夹 "${rootFolderName}" 上传完成`,
-                      description: `成功上传 ${uploadedCount} 个文件`,
-                    });
-                  } else {
-                    toast({
-                      title: `文件夹 "${rootFolderName}" 上传完成（部分失败）`,
-                      description: `成功 ${uploadedCount} 个，失败 ${failedCount} 个`,
-                      variant: 'destructive',
-                    });
-                  }
-                };
-
-                createFoldersAndUpload();
+                uploadFilesWithRelativePath(files);
                 e.target.value = '';
               }}
             />

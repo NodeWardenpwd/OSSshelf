@@ -18,6 +18,7 @@ import type {
   ApiResponse,
   AuthLoginParams,
   AuthRegisterParams,
+  UploadedFile,
   AuthResponse,
   FileListParams,
   ShareCreateParams,
@@ -372,16 +373,6 @@ export const adminApi = {
       params,
     }),
 };
-
-export interface UploadedFile {
-  id: string;
-  name: string;
-  size: number;
-  mimeType: string | null;
-  path: string;
-  bucketId: string | null;
-  createdAt: string;
-}
 
 export const tasksApi = {
   create: (data: {

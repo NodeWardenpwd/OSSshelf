@@ -15,17 +15,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { filesApi, shareApi, batchApi, type StorageBucket } from '@/services/api';
-import { uploadManager } from '@/services/uploadManager';
 import { useToast } from '@/components/ui/use-toast';
 import { useFileStore } from '@/stores/files';
 
 const TG_MAX_FILE_SIZE = 50 * 1024 * 1024;
-
-interface UploadMutationParams {
-  file: File;
-  parentId: string | null;
-  key: string;
-}
 
 interface MoveMutationParams {
   id: string;
@@ -63,24 +56,6 @@ export function useFileMutations() {
     },
     onError: (e: any) =>
       toast({ title: '创建失败', description: e.response?.data?.error?.message, variant: 'destructive' }),
-  });
-
-  const uploadMutation = useMutation({
-    mutationFn: ({ file, parentId }: Omit<UploadMutationParams, 'key'>) => {
-      return uploadManager.startUpload(file, parentId, null, () => {});
-    },
-    onSuccess: (_, { parentId }) => {
-      queryClient.invalidateQueries({ queryKey: ['files', parentId] });
-      queryClient.invalidateQueries({ queryKey: ['stats'] });
-      toast({ title: '上传成功' });
-    },
-    onError: (e: any) => {
-      toast({
-        title: '上传失败',
-        description: e?.message || e?.response?.data?.error?.message,
-        variant: 'destructive',
-      });
-    },
   });
 
   const deleteMutation = useMutation({
@@ -188,7 +163,6 @@ export function useFileMutations() {
 
   return {
     createFolderMutation,
-    uploadMutation,
     deleteMutation,
     renameMutation,
     moveMutation,
