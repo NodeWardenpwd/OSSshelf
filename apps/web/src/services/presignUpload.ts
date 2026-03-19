@@ -123,22 +123,20 @@ export async function presignUpload({
   taskId,
   skipParts,
 }: PresignUploadOptions): Promise<UploadedFile> {
+  // 每次上传调用独立的 CORS 检测状态，避免模块级单例在 Workers 复用实例时污染其他用户的上传
+  const uploadCtx = { corsErrorDetected: false };
   if (file.size > MULTIPART_THRESHOLD) {
-    return multipartUpload({ file, parentId, bucketId, onProgress, onFallback, signal, taskId, skipParts });
+    return multipartUpload({ file, parentId, bucketId, onProgress, onFallback, signal, taskId, skipParts }, uploadCtx);
   }
-  return singlePresignUpload({ file, parentId, bucketId, onProgress, onFallback, signal });
+  return singlePresignUpload({ file, parentId, bucketId, onProgress, onFallback, signal }, uploadCtx);
 }
 
 // ── Single presigned PUT upload ────────────────────────────────────────────
 
-async function singlePresignUpload({
-  file,
-  parentId,
-  bucketId,
-  onProgress,
-  onFallback,
-  signal,
-}: PresignUploadOptions): Promise<UploadedFile> {
+async function singlePresignUpload(
+  { file, parentId, bucketId, onProgress, onFallback, signal }: PresignUploadOptions,
+  uploadCtx: { corsErrorDetected: boolean }
+): Promise<UploadedFile> {
   if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError');
 
   // 通过 tasks/create 创建任务并获取预签名 PUT URL（小文件路径）
@@ -174,9 +172,9 @@ async function singlePresignUpload({
     await directPut(uploadUrl, file, file.type || 'application/octet-stream', onProgress, signal);
   } catch (error) {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError');
-    if (isCorsError(error) && !corsErrorDetected) {
+    if (isCorsError(error) && !uploadCtx.corsErrorDetected) {
       console.warn('检测到 CORS 错误，切换到代理上传模式');
-      corsErrorDetected = true;
+      uploadCtx.corsErrorDetected = true;
       onFallback?.();
       return proxyUpload({ file, parentId, bucketId, onProgress, signal });
     }
@@ -194,7 +192,7 @@ async function singlePresignUpload({
 
 // ── Multipart upload ───────────────────────────────────────────────────────
 
-let corsErrorDetected = false;
+// corsErrorDetected 已移入 presignUpload 调用上下文（见下方），避免模块级状态污染多用户
 
 function isCorsError(error: unknown): boolean {
   if (error instanceof Error) {
@@ -209,16 +207,10 @@ function isCorsError(error: unknown): boolean {
   return false;
 }
 
-async function multipartUpload({
-  file,
-  parentId,
-  bucketId,
-  onProgress,
-  onFallback,
-  signal,
-  taskId: existingTaskId,
-  skipParts = [],
-}: PresignUploadOptions): Promise<UploadedFile> {
+async function multipartUpload(
+  { file, parentId, bucketId, onProgress, onFallback, signal, taskId: existingTaskId, skipParts = [] }: PresignUploadOptions,
+  uploadCtx: { corsErrorDetected: boolean }
+): Promise<UploadedFile> {
   if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError');
 
   const totalParts = Math.ceil(file.size / PART_SIZE);
@@ -275,7 +267,7 @@ async function multipartUpload({
 
   const parts: Array<{ partNumber: number; etag: string }> = [];
   let uploadedBytes = 0;
-  let useProxyMode = corsErrorDetected;
+  let useProxyMode = uploadCtx.corsErrorDetected;
 
   // 计算已上传的字节数（用于进度显示）
   const alreadyUploadedBytes = skipParts.reduce((sum, partNum) => {
@@ -356,7 +348,7 @@ async function multipartUpload({
               // 检测 CORS 错误，切换到代理模式
               if (isCorsError(error) && !useProxyMode) {
                 console.warn('检测到 CORS 错误，切换到代理上传模式');
-                corsErrorDetected = true;
+                uploadCtx.corsErrorDetected = true;
                 useProxyMode = true;
                 etag = await proxyUploadPartForTask(taskId, partNumber, chunk, signal);
               } else {
@@ -373,21 +365,21 @@ async function multipartUpload({
       onProgress?.(Math.round((uploadedBytes / file.size) * 100));
     }
 
-    // 获取已上传分片的 etag（从服务器）
-    const existingParts: Array<{ partNumber: number; etag: string }> = [];
-    if (skipParts.length > 0) {
-      // 调用服务器获取已上传分片的 etag
-      const taskDetail = await apiGet<{
-        uploadedParts: number[];
-        parts?: Array<{ partNumber: number; etag: string }>;
-      }>(`/api/tasks/${taskId}`);
-      if (taskDetail.parts) {
-        existingParts.push(...taskDetail.parts);
-      }
-    }
-
-    // 合并所有分片
-    const allParts = [...existingParts, ...parts].sort((a, b) => a.partNumber - b.partNumber);
+    // 合并断点续传中已记录的分片（服务端 DB 缓存，含 etag）与本次新上传的分片
+    // taskInfo.parts 在断点续传模式下由服务端返回，已包含完整的 etag
+    const existingParts: Array<{ partNumber: number; etag: string }> = existingTaskId
+      ? (await apiGet<{ parts?: Array<{ partNumber: number; etag: string }> }>(`/api/tasks/${taskId}`).then(d => d.parts ?? []).catch(() => []))
+      : [];
+    const allParts = [...existingParts, ...parts]
+      .filter((p) => p.etag) // 过滤掉无 etag 的条目
+      .sort((a, b) => a.partNumber - b.partNumber)
+      // 去重：同一分片以后出现的（新上传的）为准
+      .reduce<Array<{ partNumber: number; etag: string }>>((acc, p) => {
+        const idx = acc.findIndex((x) => x.partNumber === p.partNumber);
+        if (idx === -1) acc.push(p);
+        else acc[idx] = p;
+        return acc;
+      }, []);
 
     // Step 3: Complete - 使用 /api/tasks/complete
     const result = await apiPost<UploadedFile>('/api/tasks/complete', {
@@ -608,13 +600,14 @@ export interface PresignDownloadResult {
 }
 
 export async function getPresignedDownloadUrl(fileId: string): Promise<PresignDownloadResult> {
-  const data = await apiPost<{
+  // /api/presign/download/:id 是 GET 接口，不应使用 POST
+  const data = await apiGet<{
     useProxy?: boolean;
     proxyUrl?: string;
     downloadUrl?: string;
     fileName?: string;
     mimeType?: string;
-  }>(`/api/presign/download/${fileId}`, {}).catch(() => null);
+  }>(`/api/presign/download/${fileId}`).catch(() => null);
 
   // Fall back gracefully
   if (!data || data.useProxy) {

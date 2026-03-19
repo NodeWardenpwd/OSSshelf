@@ -19,6 +19,7 @@ import type { Env, Variables } from '../types/env';
 import { z } from 'zod';
 import { s3Put, s3Get, s3Delete } from '../lib/s3client';
 import { resolveBucketConfig, updateBucketStats, checkBucketQuota } from '../lib/bucketResolver';
+import { checkFolderMimeTypeRestriction } from '../lib/folderPolicy';
 import { getEncryptionKey } from '../lib/crypto';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -141,40 +142,19 @@ app.post('/upload', async (c) => {
 
   const db = getDb(c.env.DB);
 
-  if (parentId) {
-    const parentFolder = await db
-      .select()
-      .from(files)
-      .where(and(eq(files.id, parentId), eq(files.isFolder, true)))
-      .get();
-    if (parentFolder && parentFolder.allowedMimeTypes) {
-      try {
-        const allowedTypes: string[] = JSON.parse(parentFolder.allowedMimeTypes);
-        if (allowedTypes.length > 0) {
-          const fileMime = uploadFile.type || 'application/octet-stream';
-          const isAllowed = allowedTypes.some((allowed) => {
-            if (allowed.endsWith('/*')) {
-              return fileMime.startsWith(allowed.slice(0, -1));
-            }
-            return fileMime === allowed;
-          });
-          if (!isAllowed) {
-            return c.json(
-              {
-                success: false,
-                error: {
-                  code: ERROR_CODES.VALIDATION_ERROR,
-                  message: `此文件夹仅允许上传以下类型的文件: ${allowedTypes.join(', ')}`,
-                },
-              },
-              400
-            );
-          }
-        }
-      } catch {
-        // JSON解析失败，忽略限制
-      }
-    }
+  const fileMime = uploadFile.type || 'application/octet-stream';
+  const mimeCheck = await checkFolderMimeTypeRestriction(db, parentId, fileMime);
+  if (!mimeCheck.allowed) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: `此文件夹仅允许上传以下类型的文件: ${mimeCheck.allowedTypes?.join(', ')}`,
+        },
+      },
+      400
+    );
   }
 
   const encKey = getEncryptionKey(c.env);

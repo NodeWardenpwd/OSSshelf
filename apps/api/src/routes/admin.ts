@@ -19,6 +19,7 @@ import { ERROR_CODES } from '@osshelf/shared';
 import type { Env, Variables } from '../types/env';
 import { z } from 'zod';
 import { hashPassword } from '../lib/crypto';
+import { createAuditLog, getClientIp, getUserAgent } from '../lib/audit';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -153,6 +154,17 @@ app.patch('/users/:id', async (c) => {
 
   await db.update(users).set(updateData).where(eq(users.id, id));
 
+  await createAuditLog({
+    env: c.env,
+    userId: c.get('userId'),
+    action: 'user.update',
+    resourceType: 'user',
+    resourceId: id,
+    details: { name: name !== undefined, role, storageQuota, passwordReset: !!newPassword },
+    ipAddress: getClientIp(c),
+    userAgent: getUserAgent(c),
+  });
+
   return c.json({ success: true, data: { message: '用户已更新' } });
 });
 
@@ -176,6 +188,17 @@ app.delete('/users/:id', async (c) => {
   }
 
   // Cascade: files + buckets + sessions are deleted via DB ON DELETE CASCADE
+  await createAuditLog({
+    env: c.env,
+    userId: c.get('userId'),
+    action: 'user.delete',
+    resourceType: 'user',
+    resourceId: id,
+    details: { targetEmail: user.email, targetName: user.name },
+    ipAddress: getClientIp(c),
+    userAgent: getUserAgent(c),
+  });
+
   await db.delete(users).where(eq(users.id, id));
 
   return c.json({ success: true, data: { message: '用户已删除' } });

@@ -182,6 +182,21 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const baseKey = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, baseKey, 256);
 
-  const actualHash = [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, '0')).join('');
-  return actualHash === expectedHash;
+  const actualHashBytes = new Uint8Array(bits);
+
+  // 将 expectedHash (hex string) 还原为 Uint8Array，再用 timingSafeEqual 进行常量时间比较
+  // 避免字符串 === 比较的时序攻击漏洞
+  const expectedHashBytes = new Uint8Array(expectedHash.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+
+  if (actualHashBytes.length !== expectedHashBytes.length) return false;
+
+  // 使用 crypto.subtle 的 HMAC verify 实现常量时间比较
+  // （Workers 环境不提供 timingSafeEqual，此为等效替代）
+  const hmacKey = await crypto.subtle.importKey('raw', actualHashBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+  const sentinel = new Uint8Array(1);
+  const sig1 = await crypto.subtle.sign('HMAC', hmacKey, sentinel);
+  const hmacKey2 = await crypto.subtle.importKey('raw', expectedHashBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+  const sig2 = await crypto.subtle.sign('HMAC', hmacKey2, sentinel);
+  return await crypto.subtle.verify('HMAC', hmacKey, sig2, sentinel) &&
+         await crypto.subtle.verify('HMAC', hmacKey2, sig1, sentinel);
 }

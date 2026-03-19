@@ -11,7 +11,7 @@
 
 import { Hono } from 'hono';
 import { eq, and, inArray } from 'drizzle-orm';
-import { getDb, uploadTasks, users, storageBuckets } from '../db';
+import { getDb, uploadTasks, users, storageBuckets, files } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import {
   ERROR_CODES,
@@ -34,6 +34,7 @@ import {
   type MultipartPart,
 } from '../lib/s3client';
 import { resolveBucketConfig, updateBucketStats, checkBucketQuota } from '../lib/bucketResolver';
+import { checkFolderMimeTypeRestriction } from '../lib/folderPolicy';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use('*', authMiddleware);
@@ -79,40 +80,7 @@ async function getUserOrFail(db: ReturnType<typeof getDb>, userId: string) {
   return user;
 }
 
-async function checkFolderMimeTypeRestriction(
-  db: ReturnType<typeof getDb>,
-  parentId: string | null | undefined,
-  mimeType: string
-): Promise<{ allowed: boolean; allowedTypes?: string[] }> {
-  if (!parentId) return { allowed: true };
 
-  const { files } = await import('../db');
-  const parentFolder = await db
-    .select()
-    .from(files)
-    .where(and(eq(files.id, parentId), eq(files.isFolder, true)))
-    .get();
-
-  if (!parentFolder || !parentFolder.allowedMimeTypes) {
-    return { allowed: true };
-  }
-
-  try {
-    const allowedTypes: string[] = JSON.parse(parentFolder.allowedMimeTypes);
-    if (allowedTypes.length === 0) return { allowed: true };
-
-    const isAllowed = allowedTypes.some((allowed) => {
-      if (allowed.endsWith('/*')) {
-        return mimeType.startsWith(allowed.slice(0, -1));
-      }
-      return mimeType === allowed;
-    });
-
-    return { allowed: isAllowed, allowedTypes };
-  } catch {
-    return { allowed: true };
-  }
-}
 
 app.post('/create', async (c) => {
   const userId = c.get('userId')!;
@@ -254,10 +222,15 @@ app.get('/list', async (c) => {
   // 返回所有任务，包括已完成和过期的
   return c.json({
     success: true,
-    data: tasks.map((t) => ({
-      ...t,
-      uploadedParts: JSON.parse(t.uploadedParts || '[]'),
-    })),
+    data: tasks.map((t) => {
+      let rawParts: unknown[] = [];
+      try { rawParts = JSON.parse(t.uploadedParts || '[]'); } catch { /* ignore */ }
+      // 兼容旧格式（数字数组）和新格式（{partNumber,etag}[]）
+      const uploadedPartNumbers = rawParts.map((p) =>
+        typeof p === 'number' ? p : (p as { partNumber: number }).partNumber
+      );
+      return { ...t, uploadedParts: uploadedPartNumbers };
+    }),
   });
 });
 
@@ -403,16 +376,18 @@ app.post('/part-done', async (c) => {
     return c.json({ success: false, error: { code: ERROR_CODES.TASK_EXPIRED, message: '上传任务已过期' } }, 410);
   }
 
-  const uploadedParts = JSON.parse(task.uploadedParts || '[]');
-  if (!uploadedParts.includes(partNumber)) {
-    uploadedParts.push(partNumber);
+  // 存储 {partNumber, etag} 对象以支持断点续传时直接使用，无需再次调用 S3 ListParts
+  const uploadedParts: Array<{ partNumber: number; etag: string }> = JSON.parse(task.uploadedParts || '[]');
+  const alreadyRecorded = uploadedParts.some((p) => p.partNumber === partNumber);
+  if (!alreadyRecorded) {
+    uploadedParts.push({ partNumber, etag });
     await db
       .update(uploadTasks)
       .set({ uploadedParts: JSON.stringify(uploadedParts), status: 'uploading', updatedAt: new Date().toISOString() })
       .where(eq(uploadTasks.id, taskId));
   }
 
-  return c.json({ success: true, data: { partNumber, etag, uploadedParts } });
+  return c.json({ success: true, data: { partNumber, etag, uploadedParts: uploadedParts.map((p) => p.partNumber) } });
 });
 
 app.post('/part-proxy', async (c) => {
@@ -460,9 +435,10 @@ app.post('/part-proxy', async (c) => {
   const chunkBuffer = await chunk.arrayBuffer();
   const etag = await s3UploadPart(bucketConfig, task.r2Key, task.uploadId, partNumber, chunkBuffer);
 
-  const uploadedParts = JSON.parse(task.uploadedParts || '[]');
-  if (!uploadedParts.includes(partNumber)) {
-    uploadedParts.push(partNumber);
+  const uploadedParts: Array<{ partNumber: number; etag: string }> = JSON.parse(task.uploadedParts || '[]');
+  const alreadyRecorded = uploadedParts.some((p) => p.partNumber === partNumber);
+  if (!alreadyRecorded) {
+    uploadedParts.push({ partNumber, etag });
     await db
       .update(uploadTasks)
       .set({ uploadedParts: JSON.stringify(uploadedParts), status: 'uploading', updatedAt: new Date().toISOString() })
@@ -559,7 +535,6 @@ app.post('/complete', async (c) => {
     const fileId = crypto.randomUUID();
     const path = task.parentId ? `${task.parentId}/${task.fileName}` : `/${task.fileName}`;
 
-    const { files } = await import('../db');
     await db.insert(files).values({
       id: fileId,
       userId,
@@ -696,24 +671,41 @@ app.get('/:taskId', async (c) => {
     return c.json({ success: false, error: { code: 'NO_STORAGE', message: '存储桶配置不存在' } }, 400);
   }
 
-  let uploadedParts: number[] = [];
-  let parts: MultipartPart[] = [];
+  // 优先使用 DB 中缓存的已上传分片信息（包含 etag），避免每次断点续传都调 S3 ListParts
+  let storedParts: Array<{ partNumber: number; etag: string }> = [];
   try {
-    parts = await s3ListParts(bucketConfig, task.r2Key, task.uploadId);
-    uploadedParts = parts.map((p) => p.partNumber);
-    await db
-      .update(uploadTasks)
-      .set({ uploadedParts: JSON.stringify(uploadedParts), status: 'uploading', updatedAt: new Date().toISOString() })
-      .where(eq(uploadTasks.id, taskId));
-  } catch (e) {
-    console.error('List parts error:', e);
+    storedParts = JSON.parse(task.uploadedParts || '[]');
+    // 兼容旧格式（数字数组）
+    if (storedParts.length > 0 && typeof storedParts[0] === 'number') {
+      storedParts = (storedParts as unknown as number[]).map((n) => ({ partNumber: n, etag: '' }));
+    }
+  } catch { /* ignore */ }
+
+  let parts: MultipartPart[] = storedParts.filter((p) => p.etag); // 只保留有 etag 的
+
+  // 若 DB 缓存为空或缺少 etag（旧数据兼容），降级调 S3 ListParts
+  if (parts.length === 0 && task.uploadId) {
+    try {
+      parts = await s3ListParts(bucketConfig, task.r2Key, task.uploadId);
+      // 回写 DB 缓存（含 etag）以便后续断点续传复用
+      if (parts.length > 0) {
+        await db
+          .update(uploadTasks)
+          .set({ uploadedParts: JSON.stringify(parts), status: 'uploading', updatedAt: new Date().toISOString() })
+          .where(eq(uploadTasks.id, taskId));
+      }
+    } catch (e) {
+      console.error('List parts error:', e);
+    }
   }
+
+  const uploadedPartNumbers = parts.map((p) => p.partNumber);
 
   return c.json({
     success: true,
     data: {
       ...task,
-      uploadedParts,
+      uploadedParts: uploadedPartNumbers,
       parts,
     },
   });

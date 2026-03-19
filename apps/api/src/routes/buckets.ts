@@ -271,9 +271,11 @@ app.post('/:id/toggle', async (c) => {
   }
 
   const now = new Date().toISOString();
-  await db.update(storageBuckets).set({ isActive: !bucket.isActive, updatedAt: now }).where(eq(storageBuckets.id, id));
+  const newIsActive = !bucket.isActive;
+  await db.update(storageBuckets).set({ isActive: newIsActive, updatedAt: now }).where(eq(storageBuckets.id, id));
 
-  return c.json({ success: true, data: { isActive: !bucket.isActive } });
+  // 返回实际写入的值而非内存中的旧值，防止并发时返回错误状态
+  return c.json({ success: true, data: { isActive: newIsActive } });
 });
 
 // ── POST /api/buckets/:id/test — test connectivity ────────────────────────
@@ -319,19 +321,19 @@ app.delete('/:id', async (c) => {
   }
 
   if (bucket.isDefault) {
-    // Check if there's another bucket to promote to default
-    const others = await db
+    // 晋升最早创建的存储桶为新默认桶（确定性，避免随机顺序）
+    const remaining = await db
       .select()
       .from(storageBuckets)
-      .where(and(eq(storageBuckets.userId, userId)))
+      .where(and(eq(storageBuckets.userId, userId), eq(storageBuckets.isActive, true)))
       .all();
-    const remaining = others.filter((b) => b.id !== id);
-    if (remaining.length > 0) {
+    const next = remaining.filter((b) => b.id !== id).sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    if (next) {
       const now = new Date().toISOString();
       await db
         .update(storageBuckets)
         .set({ isDefault: true, updatedAt: now })
-        .where(eq(storageBuckets.id, remaining[0].id));
+        .where(eq(storageBuckets.id, next.id));
     }
   }
 

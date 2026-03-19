@@ -780,13 +780,6 @@ export async function testS3Connection(config: S3BucketConfig): Promise<{
   if (!endpoint) throw new Error('未配置 Endpoint，无法测试连接');
 
   const region = config.region || 'us-east-1';
-  const now = new Date();
-  const amzDate = now
-    .toISOString()
-    .replace(/[:-]/g, '')
-    .replace(/\.\d{3}Z$/, 'Z');
-  const dateStamp = amzDate.slice(0, 8);
-
   let bucketUrl: string;
   let host: string;
   let canonicalUri: string;
@@ -803,31 +796,22 @@ export async function testS3Connection(config: S3BucketConfig): Promise<{
     canonicalUri = '/';
   }
 
-  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-  const headers: Record<string, string> = {
-    host: host,
-    'x-amz-date': amzDate,
-    'x-amz-content-sha256': payloadHash,
-  };
-  const signedHeadersStr = Object.keys(headers).sort().join(';');
-  const canonicalHeaders = Object.keys(headers)
-    .sort()
-    .map((k) => `${k}:${headers[k]}\n`)
-    .join('');
-  const canonicalRequest = ['HEAD', canonicalUri, '', canonicalHeaders, signedHeadersStr, payloadHash].join('\n');
-  const credScope = `${dateStamp}/${region}/s3/aws4_request`;
-  const canonicalHash = await sha256Hex(canonicalRequest);
-  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, credScope, canonicalHash].join('\n');
-  const signingKey = await deriveSigningKey(config.secretAccessKey, dateStamp, region);
-  const sigBuf = await hmacSHA256(signingKey, stringToSign);
-  const signature = Array.from(new Uint8Array(sigBuf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'; // SHA256('')
 
-  headers['Authorization'] =
-    `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credScope}, SignedHeaders=${signedHeadersStr}, Signature=${signature}`;
+  // 复用 signRequest 避免重复签名逻辑
+  const signed = await signRequest({
+    method: 'HEAD',
+    url: bucketUrl,
+    host,
+    canonicalUri,
+    queryString: '',
+    payloadHash,
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey,
+    region,
+  });
 
-  const res = await fetch(bucketUrl, { method: 'HEAD', headers });
+  const res = await fetch(signed.url, { method: 'HEAD', headers: signed.headers });
 
   if (res.status === 200 || res.status === 204) {
     return { connected: true, message: '连接成功', statusCode: res.status };

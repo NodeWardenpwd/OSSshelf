@@ -87,21 +87,35 @@ async function checkLoginLockout(
   const now = new Date();
   const lockoutThreshold = new Date(now.getTime() - LOGIN_LOCKOUT_DURATION).toISOString();
 
-  const recentAttempts = await db
+  // 双维度查询：按邮箱 OR 按 IP，分别评估是否触发锁定
+  // 防止攻击者通过对某账号持续发错密码实施 DoS
+  const recentByEmail = await db
     .select()
     .from(loginAttempts)
     .where(and(eq(loginAttempts.email, email), gt(loginAttempts.createdAt, lockoutThreshold)))
     .all();
 
-  const failedAttempts = recentAttempts.filter((a) => !a.success);
+  const failedByEmail = recentByEmail.filter((a) => !a.success);
 
-  if (failedAttempts.length >= LOGIN_MAX_ATTEMPTS) {
-    const lastFailed = failedAttempts.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))[0];
+  // 邮箱维度：对账号实施锁定（正常防暴力破解）
+  if (failedByEmail.length >= LOGIN_MAX_ATTEMPTS) {
+    const lastFailed = failedByEmail.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))[0];
     const lockoutUntil = new Date(new Date(lastFailed.createdAt).getTime() + LOGIN_LOCKOUT_DURATION);
     return { locked: true, remainingAttempts: 0, lockoutUntil: lockoutUntil.toISOString() };
   }
 
-  return { locked: false, remainingAttempts: LOGIN_MAX_ATTEMPTS - failedAttempts.length, lockoutUntil: null };
+  // IP 维度：若同一 IP 针对同一邮箱反复失败，同样触发锁定
+  // 避免攻击者从同一 IP 暴力枚举多个账号时绕过单账号限制
+  if (ipAddress) {
+    const failedByIp = recentByEmail.filter((a) => !a.success && a.ipAddress === ipAddress);
+    if (failedByIp.length >= LOGIN_MAX_ATTEMPTS) {
+      const lastFailed = failedByIp.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))[0];
+      const lockoutUntil = new Date(new Date(lastFailed.createdAt).getTime() + LOGIN_LOCKOUT_DURATION);
+      return { locked: true, remainingAttempts: 0, lockoutUntil: lockoutUntil.toISOString() };
+    }
+  }
+
+  return { locked: false, remainingAttempts: LOGIN_MAX_ATTEMPTS - failedByEmail.length, lockoutUntil: null };
 }
 
 async function recordLoginAttempt(

@@ -38,6 +38,7 @@ import {
   type MultipartPart,
 } from '../lib/s3client';
 import { resolveBucketConfig, updateBucketStats, checkBucketQuota } from '../lib/bucketResolver';
+import { checkFolderMimeTypeRestriction } from '../lib/folderPolicy';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use('*', authMiddleware);
@@ -114,39 +115,7 @@ async function getUserOrFail(db: ReturnType<typeof getDb>, userId: string) {
   return user;
 }
 
-async function checkFolderMimeTypeRestriction(
-  db: ReturnType<typeof getDb>,
-  parentId: string | null | undefined,
-  mimeType: string
-): Promise<{ allowed: boolean; allowedTypes?: string[] }> {
-  if (!parentId) return { allowed: true };
 
-  const parentFolder = await db
-    .select()
-    .from(files)
-    .where(and(eq(files.id, parentId), eq(files.isFolder, true)))
-    .get();
-
-  if (!parentFolder || !parentFolder.allowedMimeTypes) {
-    return { allowed: true };
-  }
-
-  try {
-    const allowedTypes: string[] = JSON.parse(parentFolder.allowedMimeTypes);
-    if (allowedTypes.length === 0) return { allowed: true };
-
-    const isAllowed = allowedTypes.some((allowed) => {
-      if (allowed.endsWith('/*')) {
-        return mimeType.startsWith(allowed.slice(0, -1));
-      }
-      return mimeType === allowed;
-    });
-
-    return { allowed: isAllowed, allowedTypes };
-  } catch {
-    return { allowed: true };
-  }
-}
 
 // ── POST /api/presign/upload ───────────────────────────────────────────────
 // Phase 1: Return a presigned PUT URL. The browser uploads directly.
