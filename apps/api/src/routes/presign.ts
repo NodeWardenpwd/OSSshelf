@@ -160,6 +160,11 @@ app.post('/upload', async (c) => {
     return c.json({ success: true, data: { useProxy: true } });
   }
 
+  // Telegram 桶不支持预签名上传，让前端使用代理上传
+  if (bucketConfig.provider === 'telegram') {
+    return c.json({ success: true, data: { useProxy: true, bucketId: bucketConfig.id } });
+  }
+
   // Check per-bucket quota
   const quotaErr = await checkBucketQuota(db, bucketConfig.id, fileSize);
   if (quotaErr) {
@@ -291,7 +296,10 @@ app.post('/multipart/init', async (c) => {
     return c.json({ success: true, data: { useProxy: true } });
   }
 
-  const quotaErr = await checkBucketQuota(db, bucketConfig.id, fileSize);
+  // Telegram 桶不支持分片上传，回落到代理上传
+  if (bucketConfig.provider === 'telegram') {
+    return c.json({ success: true, data: { useProxy: true, bucketId: bucketConfig.id } });
+  }
   if (quotaErr) {
     return c.json({ success: false, error: { code: ERROR_CODES.STORAGE_EXCEEDED, message: quotaErr } }, 400);
   }

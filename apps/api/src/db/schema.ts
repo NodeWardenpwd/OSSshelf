@@ -293,6 +293,24 @@ export const downloadTasks = sqliteTable(
   })
 );
 
+export const telegramFileRefs = sqliteTable(
+  'telegram_file_refs',
+  {
+    id: text('id').primaryKey(),
+    fileId: text('file_id').notNull(),
+    r2Key: text('r2_key').notNull().unique(),
+    tgFileId: text('tg_file_id').notNull(),
+    tgFileSize: integer('tg_file_size'),
+    bucketId: text('bucket_id').notNull(),
+    createdAt: text('created_at').notNull().default('CURRENT_TIMESTAMP'),
+  },
+  (table) => ({
+    r2KeyIdx: index('idx_tg_refs_r2key').on(table.r2Key),
+    fileIdIdx: index('idx_tg_refs_file_id').on(table.fileId),
+    bucketIdx: index('idx_tg_refs_bucket').on(table.bucketId),
+  })
+);
+
 export type DbType = typeof import('./index').getDb;
 
 export type File = typeof files.$inferSelect;

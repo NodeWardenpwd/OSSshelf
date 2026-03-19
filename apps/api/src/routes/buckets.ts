@@ -31,6 +31,7 @@ export const PROVIDERS = {
   b2: { name: 'Backblaze B2', defaultEndpoint: 'https://s3.us-west-004.backblazeb2.com', pathStyle: true },
   minio: { name: 'MinIO', defaultEndpoint: 'http://localhost:9000', pathStyle: true },
   custom: { name: '自定义 S3 兼容', defaultEndpoint: '', pathStyle: false },
+  telegram: { name: 'Telegram', defaultEndpoint: '', pathStyle: false },
 } as const;
 
 // Import credential helpers and S3 test from shared lib
@@ -39,12 +40,12 @@ import { encryptSecret, testS3Connection, makeBucketConfigAsync } from '../lib/s
 // ── Schemas ────────────────────────────────────────────────────────────────
 const createBucketSchema = z.object({
   name: z.string().min(1, '名称不能为空').max(100),
-  provider: z.enum(['r2', 's3', 'oss', 'cos', 'obs', 'b2', 'minio', 'custom']),
+  provider: z.enum(['r2', 's3', 'oss', 'cos', 'obs', 'b2', 'minio', 'custom', 'telegram']),
   bucketName: z.string().min(1, '存储桶名称不能为空').max(255),
   endpoint: z.string().url('Endpoint 必须是有效的 URL').optional().or(z.literal('')),
   region: z.string().max(64).optional(),
-  accessKeyId: z.string().min(1, 'Access Key ID 不能为空'),
-  secretAccessKey: z.string().min(1, 'Secret Access Key 不能为空'),
+  accessKeyId: z.string().min(1, 'Access Key ID / Bot Token 不能为空'),
+  secretAccessKey: z.string().optional().default('telegram-no-secret'),
   pathStyle: z.boolean().optional().default(false),
   isDefault: z.boolean().optional().default(false),
   notes: z.string().max(500).optional(),
@@ -56,10 +57,14 @@ const updateBucketSchema = createBucketSchema.partial();
 // ── Helper: strip credentials from response ───────────────────────────────
 function sanitize(bucket: typeof storageBuckets.$inferSelect) {
   const { accessKeyId, secretAccessKey, ...safe } = bucket;
+  // Telegram Bot Token 以 "<id>:ABC..." 格式呈现，只显示前8字符
+  const displayAkId = bucket.provider === 'telegram'
+    ? accessKeyId.slice(0, 8) + '••••••••'
+    : accessKeyId.slice(0, 4) + '••••••••' + accessKeyId.slice(-4);
   return {
     ...safe,
-    accessKeyId: accessKeyId.slice(0, 4) + '••••••••' + accessKeyId.slice(-4),
-    secretAccessKeyMasked: '••••••••••••••••',
+    accessKeyId: displayAkId,
+    secretAccessKeyMasked: bucket.provider === 'telegram' ? '(telegram)' : '••••••••••••••••',
   };
 }
 
@@ -293,6 +298,33 @@ app.post('/:id/test', async (c) => {
 
   if (!bucket) {
     return c.json({ success: false, error: { code: ERROR_CODES.NOT_FOUND, message: '存储桶不存在' } }, 404);
+  }
+
+  // ── Telegram 专用测试路径 ──────────────────────────────────────────────
+  if (bucket.provider === 'telegram') {
+    try {
+      const { tgTestConnection } = await import('../lib/telegramClient');
+      const { decryptSecret } = await import('../lib/s3client');
+      const botToken = await decryptSecret(bucket.accessKeyId, encKey);
+      const tgResult = await tgTestConnection({
+        botToken,
+        chatId: bucket.bucketName,
+        apiBase: bucket.endpoint || undefined,
+      });
+      return c.json({
+        success: tgResult.connected,
+        data: {
+          connected: tgResult.connected,
+          message: tgResult.message,
+          statusCode: tgResult.connected ? 200 : 400,
+        },
+      });
+    } catch (err: any) {
+      return c.json({
+        success: false,
+        error: { code: 'CONNECTION_FAILED', message: err.message || 'Telegram 连接失败' },
+      }, 200);
+    }
   }
 
   try {

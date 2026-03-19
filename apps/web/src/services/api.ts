@@ -161,7 +161,7 @@ export interface StorageBucket {
   id: string;
   userId: string;
   name: string;
-  provider: 'r2' | 's3' | 'oss' | 'cos' | 'obs' | 'b2' | 'minio' | 'custom';
+  provider: 'r2' | 's3' | 'oss' | 'cos' | 'obs' | 'b2' | 'minio' | 'custom' | 'telegram';
   bucketName: string;
   endpoint: string | null;
   region: string | null;
@@ -185,7 +185,7 @@ export interface BucketFormData {
   endpoint?: string;
   region?: string;
   accessKeyId: string;
-  secretAccessKey: string;
+  secretAccessKey?: string;
   pathStyle?: boolean;
   isDefault?: boolean;
   notes?: string;
@@ -288,6 +288,12 @@ export const PROVIDER_META: Record<
     icon: '⚙️',
     endpointPlaceholder: 'https://your-s3-endpoint.com',
   },
+  telegram: {
+    label: 'Telegram',
+    color: '#26A5E4',
+    icon: '✈️',
+    endpointPlaceholder: 'https://api.telegram.org（可选，留空使用默认）',
+  },
 };
 
 export const bucketsApi = {
@@ -302,6 +308,15 @@ export const bucketsApi = {
   test: (id: string) =>
     api.post<ApiResponse<{ connected: boolean; message: string; statusCode: number }>>(`/api/buckets/${id}/test`),
   delete: (id: string) => api.delete<ApiResponse<{ message: string }>>(`/api/buckets/${id}`),
+};
+
+export const telegramApi = {
+  /** 测试临时 Bot Token / Chat ID（不保存） */
+  test: (data: { botToken: string; chatId: string; apiBase?: string }) =>
+    api.post<ApiResponse<{ connected: boolean; message: string; botName?: string; chatTitle?: string }>>(
+      '/api/telegram/test',
+      data
+    ),
 };
 
 export interface AdminUser {

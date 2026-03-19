@@ -11,7 +11,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { bucketsApi, PROVIDER_META, type StorageBucket, type BucketFormData } from '@/services/api';
+import { bucketsApi, telegramApi, PROVIDER_META, type StorageBucket, type BucketFormData } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -87,10 +87,15 @@ function BucketForm({ initial, onSave, onCancel, loading }: BucketFormProps) {
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
     if (!form.name.trim()) errs.name = '请输入显示名称';
-    if (!form.bucketName.trim()) errs.bucketName = '请输入存储桶名称';
-    if (!isEdit && !form.accessKeyId.trim()) errs.accessKeyId = '请输入 Access Key ID';
-    if (!isEdit && !form.secretAccessKey.trim()) errs.secretAccessKey = '请输入 Secret Access Key';
-    if (meta.regionRequired && !form.region?.trim()) errs.region = '该厂商需要填写区域';
+    if (form.provider === 'telegram') {
+      if (!form.accessKeyId.trim()) errs.accessKeyId = '请输入 Bot Token';
+      if (!form.bucketName.trim()) errs.bucketName = '请输入 Chat ID';
+    } else {
+      if (!form.bucketName.trim()) errs.bucketName = '请输入存储桶名称';
+      if (!isEdit && !form.accessKeyId.trim()) errs.accessKeyId = '请输入 Access Key ID';
+      if (!isEdit && !form.secretAccessKey?.trim()) errs.secretAccessKey = '请输入 Secret Access Key';
+      if (meta.regionRequired && !form.region?.trim()) errs.region = '该厂商需要填写区域';
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -98,6 +103,10 @@ function BucketForm({ initial, onSave, onCancel, loading }: BucketFormProps) {
   const handleSubmit = () => {
     if (validate()) {
       const data = { ...form };
+      // Telegram 不需要 secretAccessKey，使用占位符
+      if (data.provider === 'telegram') {
+        data.secretAccessKey = 'telegram-no-secret';
+      }
       if (isEdit && !data.accessKeyId) delete (data as any).accessKeyId;
       if (isEdit && !data.secretAccessKey) delete (data as any).secretAccessKey;
       onSave(data);
@@ -164,107 +173,176 @@ function BucketForm({ initial, onSave, onCancel, loading }: BucketFormProps) {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {field('显示名称', 'name', { required: true, placeholder: '如：我的 R2 存储桶' })}
-        {field('存储桶名称', 'bucketName', { required: true, placeholder: '如：my-bucket-name' })}
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium flex items-center gap-1">Endpoint URL</label>
-          <Input
-            value={form.endpoint || ''}
-            onChange={(e) => setForm((f) => ({ ...f, endpoint: e.target.value }))}
-            placeholder={meta.endpointPlaceholder || '留空使用默认'}
-            className={cn(errors.endpoint && 'border-red-500')}
-          />
-          {errors.endpoint && <p className="text-xs text-red-500">{errors.endpoint}</p>}
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium flex items-center gap-1">
-            区域 (Region){meta.regionRequired && <span className="text-red-500">*</span>}
-          </label>
-          {meta.regions ? (
-            <select
-              value={form.region || ''}
-              onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))}
-              className={cn(
-                'flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm',
-                'focus:outline-none focus:ring-1 focus:ring-ring',
-                errors.region && 'border-red-500'
-              )}
-            >
-              <option value="">选择区域…</option>
-              {meta.regions.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          ) : (
+        {field('显示名称', 'name', { required: true, placeholder: form.provider === 'telegram' ? '如：我的 Telegram 频道' : '如：我的 R2 存储桶' })}
+        {form.provider === 'telegram' ? (
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium flex items-center gap-1">
+              Chat ID <span className="text-red-500">*</span>
+            </label>
             <Input
-              value={form.region || ''}
-              onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))}
-              placeholder="如：us-east-1（可选）"
+              value={form.bucketName || ''}
+              onChange={(e) => setForm((f) => ({ ...f, bucketName: e.target.value }))}
+              placeholder="-1001234567890"
+              className={cn(errors.bucketName && 'border-red-500 focus-visible:ring-red-500')}
             />
-          )}
-          {errors.region && <p className="text-xs text-red-500">{errors.region}</p>}
-        </div>
-      </div>
-
-      {/* Credentials */}
-      <div className="space-y-3 p-4 rounded-lg bg-muted/40 border">
-        <p className="text-sm font-medium text-muted-foreground">访问凭证{isEdit ? '（留空则保留原值）' : ''}</p>
-        {field('Access Key ID', 'accessKeyId', {
-          required: !isEdit,
-          placeholder: isEdit ? '留空则保留原有凭证' : '输入 Access Key ID',
-        })}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium flex items-center gap-1">
-            Secret Access Key{!isEdit && <span className="text-red-500">*</span>}
-          </label>
-          <div className="relative">
-            <Input
-              type={showSecret ? 'text' : 'password'}
-              value={form.secretAccessKey || ''}
-              onChange={(e) => setForm((f) => ({ ...f, secretAccessKey: e.target.value }))}
-              placeholder={isEdit ? '留空则保留原有凭证' : '输入 Secret Access Key'}
-              className={cn('pr-10', errors.secretAccessKey && 'border-red-500')}
-            />
-            <button
-              type="button"
-              onClick={() => setShowSecret((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
+            <p className="text-xs text-muted-foreground">频道/群组 ID，私人频道通常以 -100 开头</p>
+            {errors.bucketName && <p className="text-xs text-red-500">{errors.bucketName}</p>}
           </div>
-          {errors.secretAccessKey && <p className="text-xs text-red-500">{errors.secretAccessKey}</p>}
-        </div>
+        ) : (
+          field('存储桶名称', 'bucketName', { required: true, placeholder: '如：my-bucket-name' })
+        )}
       </div>
 
-      {/* Options */}
-      <div className="flex flex-wrap gap-4">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={form.pathStyle || false}
-            onChange={(e) => setForm((f) => ({ ...f, pathStyle: e.target.checked }))}
-            className="rounded"
-          />
-          <span className="text-sm">强制 Path-style URL</span>
-          <span className="text-xs text-muted-foreground">（MinIO / B2 等需要）</span>
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={form.isDefault || false}
-            onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
-            className="rounded"
-          />
-          <span className="text-sm">设为默认存储桶</span>
-        </label>
-      </div>
+      {form.provider === 'telegram' ? (
+        /* ── Telegram 专属配置区 ────────────────────────────────────── */
+        <div className="space-y-4 p-4 rounded-lg border-2 border-[#26A5E4]/30 bg-[#26A5E4]/5">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[#26A5E4]">
+            <span className="text-base">✈️</span> Telegram Bot 配置
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium flex items-center gap-1">
+              Bot Token {!isEdit && <span className="text-red-500">*</span>}
+            </label>
+            <div className="relative">
+              <Input
+                type={showSecret ? 'text' : 'password'}
+                value={form.accessKeyId || ''}
+                onChange={(e) => setForm((f) => ({ ...f, accessKeyId: e.target.value }))}
+                placeholder={isEdit ? '留空则保留原有 Token' : '123456789:ABCdefGHIjklMNO...'}
+                className={cn('pr-10', errors.accessKeyId && 'border-red-500 focus-visible:ring-red-500')}
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecret((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">从 @BotFather 获取，格式：&lt;id&gt;:&lt;token&gt;</p>
+            {errors.accessKeyId && <p className="text-xs text-red-500">{errors.accessKeyId}</p>}
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Bot API 代理地址（可选）</label>
+            <Input
+              value={form.endpoint || ''}
+              onChange={(e) => setForm((f) => ({ ...f, endpoint: e.target.value }))}
+              placeholder="https://api.telegram.org（留空使用默认）"
+            />
+            <p className="text-xs text-muted-foreground">仅在无法直连 Telegram 时填入自建代理</p>
+          </div>
+          <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 space-y-1">
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">⚠️ 使用须知</p>
+            <ul className="text-xs text-amber-600 dark:text-amber-500 space-y-0.5 list-disc list-inside">
+              <li>单文件上传上限 <strong>50 MB</strong>（Telegram Bot API 限制）</li>
+              <li>请确保 Bot 已被添加为目标频道/群组的<strong>管理员</strong></li>
+              <li>私人频道 Chat ID 通常以 <code>-100</code> 开头</li>
+              <li>存储空间由 Telegram 服务器提供，理论无上限</li>
+            </ul>
+          </div>
+        </div>
+      ) : (
+        /* ── S3 兼容存储配置区 ──────────────────────────────────────── */
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium flex items-center gap-1">Endpoint URL</label>
+              <Input
+                value={form.endpoint || ''}
+                onChange={(e) => setForm((f) => ({ ...f, endpoint: e.target.value }))}
+                placeholder={meta.endpointPlaceholder || '留空使用默认'}
+                className={cn(errors.endpoint && 'border-red-500')}
+              />
+              {errors.endpoint && <p className="text-xs text-red-500">{errors.endpoint}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium flex items-center gap-1">
+                区域 (Region){meta.regionRequired && <span className="text-red-500">*</span>}
+              </label>
+              {meta.regions ? (
+                <select
+                  value={form.region || ''}
+                  onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))}
+                  className={cn(
+                    'flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm',
+                    'focus:outline-none focus:ring-1 focus:ring-ring',
+                    errors.region && 'border-red-500'
+                  )}
+                >
+                  <option value="">选择区域…</option>
+                  {meta.regions.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  value={form.region || ''}
+                  onChange={(e) => setForm((f) => ({ ...f, region: e.target.value }))}
+                  placeholder="如：us-east-1（可选）"
+                />
+              )}
+              {errors.region && <p className="text-xs text-red-500">{errors.region}</p>}
+            </div>
+          </div>
+
+          {/* Credentials */}
+          <div className="space-y-3 p-4 rounded-lg bg-muted/40 border">
+            <p className="text-sm font-medium text-muted-foreground">访问凭证{isEdit ? '（留空则保留原值）' : ''}</p>
+            {field('Access Key ID', 'accessKeyId', {
+              required: !isEdit,
+              placeholder: isEdit ? '留空则保留原有凭证' : '输入 Access Key ID',
+            })}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium flex items-center gap-1">
+                Secret Access Key{!isEdit && <span className="text-red-500">*</span>}
+              </label>
+              <div className="relative">
+                <Input
+                  type={showSecret ? 'text' : 'password'}
+                  value={form.secretAccessKey || ''}
+                  onChange={(e) => setForm((f) => ({ ...f, secretAccessKey: e.target.value }))}
+                  placeholder={isEdit ? '留空则保留原有凭证' : '输入 Secret Access Key'}
+                  className={cn('pr-10', errors.secretAccessKey && 'border-red-500')}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {errors.secretAccessKey && <p className="text-xs text-red-500">{errors.secretAccessKey}</p>}
+            </div>
+          </div>
+
+          {/* Options */}
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.pathStyle || false}
+                onChange={(e) => setForm((f) => ({ ...f, pathStyle: e.target.checked }))}
+                className="rounded"
+              />
+              <span className="text-sm">强制 Path-style URL</span>
+              <span className="text-xs text-muted-foreground">（MinIO / B2 等需要）</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.isDefault || false}
+                onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
+                className="rounded"
+              />
+              <span className="text-sm">设为默认存储桶</span>
+            </label>
+          </div>
+        </>
+      )}
 
       {field('备注（可选）', 'notes', { placeholder: '用途说明或备忘信息' })}
 
@@ -294,6 +372,17 @@ function BucketForm({ initial, onSave, onCancel, loading }: BucketFormProps) {
         </div>
         <p className="text-xs text-muted-foreground">限制此存储桶的最大使用量（留空则无限制）</p>
       </div>
+
+      {/* Default checkbox — common to all providers */}
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={form.isDefault || false}
+          onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
+          className="rounded"
+        />
+        <span className="text-sm">设为默认存储桶</span>
+      </label>
 
       <div className="flex gap-2 pt-2">
         <Button onClick={handleSubmit} disabled={loading} className="flex-1 sm:flex-none">
