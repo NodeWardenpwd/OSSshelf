@@ -38,10 +38,21 @@ app.use('*', prettyJSON());
 app.use(
   '*',
   cors({
-    origin: ['https://ossshelf.neutronx.uk'],
+    origin: (origin) => {
+      const allowedOrigins = [
+        'https://ossshelf.neutronx.uk',
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+      ];
+      if (allowedOrigins.includes(origin)) return origin;
+      if (origin.endsWith('.neutronx.uk')) return origin;
+      return allowedOrigins[0];
+    },
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'PROPFIND', 'MKCOL', 'COPY', 'MOVE', 'HEAD'],
-    allowHeaders: ['Content-Type', 'Authorization', 'Depth', 'Destination', 'X-Requested-With'],
-    exposeHeaders: ['Content-Length', 'Content-Range'],
+    allowHeaders: ['Content-Type', 'Authorization', 'Depth', 'Destination', 'X-Requested-With', 'Accept', 'Origin', 'Cache-Control'],
+    exposeHeaders: ['Content-Length', 'Content-Range', 'ETag'],
     maxAge: 86400,
     credentials: true,
   })
@@ -50,6 +61,8 @@ app.use(
   '*',
   secureHeaders({
     crossOriginResourcePolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
   })
 );
 

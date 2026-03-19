@@ -31,21 +31,38 @@
 
 ## 错误码列表
 
-| 错误码            | 描述                     |
-| ----------------- | ------------------------ |
-| UNAUTHORIZED      | 未授权，Token 无效或过期 |
-| FORBIDDEN         | 禁止访问，权限不足       |
-| NOT_FOUND         | 资源不存在               |
-| VALIDATION_ERROR  | 参数验证失败             |
-| FILE_TOO_LARGE    | 文件大小超过限制         |
-| STORAGE_EXCEEDED  | 存储空间不足             |
-| SHARE_EXPIRED     | 分享链接已过期           |
-| LOGIN_LOCKED      | 登录已被锁定             |
-| PERMISSION_DENIED | 权限不足                 |
+| 错误码                       | 描述                         |
+| ---------------------------- | ---------------------------- |
+| UNAUTHORIZED                 | 未授权，Token 无效或过期     |
+| FORBIDDEN                    | 禁止访问，权限不足           |
+| NOT_FOUND                    | 资源不存在                   |
+| VALIDATION_ERROR             | 参数验证失败                 |
+| FILE_TOO_LARGE               | 文件大小超过限制             |
+| STORAGE_EXCEEDED             | 存储空间不足                 |
+| SHARE_EXPIRED                | 分享链接已过期               |
+| SHARE_PASSWORD_REQUIRED      | 分享需要密码                 |
+| SHARE_PASSWORD_INVALID       | 分享密码错误                 |
+| SHARE_DOWNLOAD_LIMIT_EXCEEDED| 分享下载次数已达上限         |
+| LOGIN_LOCKED                 | 登录已被锁定                 |
+| PERMISSION_DENIED            | 权限不足                     |
+| TASK_EXPIRED                 | 上传任务已过期               |
+| INTERNAL_ERROR               | 服务器内部错误               |
+| REGISTRATION_CLOSED          | 注册已关闭                   |
+| INVITE_CODE_REQUIRED         | 需要邀请码                   |
+| INVITE_CODE_INVALID          | 邀请码无效                   |
+| INVITE_CODE_USED             | 邀请码已使用                 |
 
 ---
 
 ## 认证接口
+
+### 获取注册配置
+
+```http
+GET /api/auth/registration-config
+```
+
+返回注册开关和邀请码要求配置。
 
 ### 用户注册
 
@@ -56,7 +73,20 @@ Content-Type: application/json
 {
   "email": "user@example.com",
   "password": "password123",
-  "name": "用户名"
+  "name": "用户名",
+  "inviteCode": "邀请码（可选）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "user": { "id", "email", "name", "role", "storageQuota", "storageUsed", "createdAt", "updatedAt" },
+    "token": "jwt-token",
+    "deviceId": "设备ID"
+  }
 }
 ```
 
@@ -74,6 +104,25 @@ Content-Type: application/json
 }
 ```
 
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "user": { "id", "email", "name", "role", "storageQuota", "storageUsed", "createdAt", "updatedAt" },
+    "token": "jwt-token",
+    "deviceId": "设备ID"
+  }
+}
+```
+
+### 用户登出
+
+```http
+POST /api/auth/logout
+Authorization: Bearer <token>
+```
+
 ### 获取当前用户信息
 
 ```http
@@ -84,7 +133,7 @@ Authorization: Bearer <token>
 ### 更新用户信息
 
 ```http
-PUT /api/auth/profile
+PATCH /api/auth/me
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -92,6 +141,18 @@ Content-Type: application/json
   "name": "新昵称",
   "currentPassword": "当前密码",
   "newPassword": "新密码"
+}
+```
+
+### 注销账户
+
+```http
+DELETE /api/auth/me
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "password": "当前密码确认"
 }
 ```
 
@@ -109,6 +170,30 @@ DELETE /api/auth/devices/<deviceId>
 Authorization: Bearer <token>
 ```
 
+### 获取用户统计信息
+
+```http
+GET /api/auth/stats
+Authorization: Bearer <token>
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "fileCount": 100,
+    "folderCount": 10,
+    "trashCount": 5,
+    "storageUsed": 1073741824,
+    "storageQuota": 10737418240,
+    "recentFiles": [],
+    "typeBreakdown": { "image": 524288000, "video": 314572800 },
+    "bucketBreakdown": []
+  }
+}
+```
+
 ---
 
 ## 文件接口
@@ -119,6 +204,14 @@ Authorization: Bearer <token>
 GET /api/files?parentId=<folderId>&search=<keyword>&sortBy=name&sortOrder=asc
 Authorization: Bearer <token>
 ```
+
+**查询参数**:
+- `parentId`: 父文件夹ID（可选）
+- `search`: 搜索关键词（可选）
+- `sortBy`: 排序字段，默认 `createdAt`
+- `sortOrder`: 排序方向，`asc` 或 `desc`，默认 `desc`
+
+**响应**: 返回文件列表，包含 `bucket`、`owner`、`accessPermission`、`isOwner` 字段。
 
 ### 创建文件夹
 
@@ -153,6 +246,8 @@ GET /api/files/<fileId>
 Authorization: Bearer <token>
 ```
 
+**响应**: 包含 `bucket`、`owner`、`isOwner` 字段。
+
 ### 更新文件/文件夹
 
 ```http
@@ -163,6 +258,32 @@ Content-Type: application/json
 {
   "name": "新名称",
   "parentId": "新父文件夹ID"
+}
+```
+
+### 更新文件夹设置
+
+```http
+PUT /api/files/<fileId>/settings
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "allowedMimeTypes": ["image/*", "application/pdf"]
+}
+```
+
+设置文件夹允许上传的文件类型，`null` 表示不限制。
+
+### 移动文件
+
+```http
+POST /api/files/<fileId>/move
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "targetParentId": "目标文件夹ID"
 }
 ```
 
@@ -180,6 +301,18 @@ GET /api/files/<fileId>/download
 Authorization: Bearer <token>
 ```
 
+### 文件预览
+
+```http
+GET /api/files/<fileId>/preview
+Authorization: Bearer <token>
+```
+
+或通过 URL 参数传递 token：
+```http
+GET /api/files/<fileId>/preview?token=<jwt-token>
+```
+
 ---
 
 ## 回收站接口
@@ -194,21 +327,21 @@ Authorization: Bearer <token>
 ### 恢复文件
 
 ```http
-POST /api/files/<fileId>/restore
+POST /api/files/trash/<fileId>/restore
 Authorization: Bearer <token>
 ```
 
 ### 永久删除
 
 ```http
-DELETE /api/files/<fileId>/permanent
+DELETE /api/files/trash/<fileId>
 Authorization: Bearer <token>
 ```
 
 ### 清空回收站
 
 ```http
-DELETE /api/files/trash/empty
+DELETE /api/files/trash
 Authorization: Bearer <token>
 ```
 
@@ -223,6 +356,15 @@ GET /api/buckets
 Authorization: Bearer <token>
 ```
 
+### 获取存储提供商信息
+
+```http
+GET /api/buckets/providers
+Authorization: Bearer <token>
+```
+
+返回支持的存储提供商列表及其默认配置。
+
 ### 创建存储桶
 
 ```http
@@ -234,11 +376,24 @@ Content-Type: application/json
   "name": "我的 S3 存储桶",
   "provider": "s3",
   "bucketName": "my-bucket",
+  "endpoint": "https://s3.amazonaws.com",
   "region": "us-east-1",
   "accessKeyId": "AKIA...",
   "secretAccessKey": "secret...",
-  "isDefault": true
+  "pathStyle": false,
+  "isDefault": true,
+  "notes": "备注",
+  "storageQuota": 107374182400
 }
+```
+
+**支持的 provider**: `r2`, `s3`, `oss`, `cos`, `obs`, `b2`, `minio`, `custom`
+
+### 获取单个存储桶
+
+```http
+GET /api/buckets/<bucketId>
+Authorization: Bearer <token>
 ```
 
 ### 更新存储桶
@@ -252,6 +407,27 @@ Content-Type: application/json
   "name": "更新的名称",
   "isDefault": true
 }
+```
+
+### 设为默认存储桶
+
+```http
+POST /api/buckets/<bucketId>/set-default
+Authorization: Bearer <token>
+```
+
+### 启用/禁用存储桶
+
+```http
+POST /api/buckets/<bucketId>/toggle
+Authorization: Bearer <token>
+```
+
+### 测试存储桶连接
+
+```http
+POST /api/buckets/<bucketId>/test
+Authorization: Bearer <token>
 ```
 
 ### 删除存储桶
@@ -281,6 +457,40 @@ Content-Type: application/json
 }
 ```
 
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "uploadUrl": "https://...",
+    "fileId": "uuid",
+    "r2Key": "files/userId/fileId/example.zip",
+    "bucketId": "bucket-uuid",
+    "expiresIn": 3600
+  }
+}
+```
+
+或返回 `{ "useProxy": true }` 表示应使用代理上传。
+
+### 确认上传
+
+```http
+POST /api/presign/confirm
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "fileId": "uuid",
+  "fileName": "example.zip",
+  "fileSize": 52428800,
+  "mimeType": "application/zip",
+  "parentId": null,
+  "r2Key": "files/userId/fileId/example.zip",
+  "bucketId": "bucket-uuid"
+}
+```
+
 ### 分片上传初始化
 
 ```http
@@ -292,7 +502,23 @@ Content-Type: application/json
   "fileName": "large-file.iso",
   "fileSize": 5368709120,
   "mimeType": "application/octet-stream",
-  "parentId": null
+  "parentId": null,
+  "bucketId": null
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "uploadId": "upload-id",
+    "fileId": "uuid",
+    "r2Key": "files/userId/fileId/large-file.iso",
+    "bucketId": "bucket-uuid",
+    "firstPartUrl": "https://...",
+    "expiresIn": 3600
+  }
 }
 ```
 
@@ -322,6 +548,9 @@ Content-Type: application/json
   "fileId": "uuid",
   "fileName": "large-file.iso",
   "fileSize": 5368709120,
+  "mimeType": "application/octet-stream",
+  "parentId": null,
+  "r2Key": "files/userId/fileId/large-file.iso",
   "uploadId": "upload-id",
   "bucketId": "bucket-uuid",
   "parts": [
@@ -329,6 +558,50 @@ Content-Type: application/json
     { "partNumber": 2, "etag": "etag-2" }
   ]
 }
+```
+
+### 取消分片上传
+
+```http
+POST /api/presign/multipart/abort
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "r2Key": "files/userId/fileId/large-file.iso",
+  "uploadId": "upload-id",
+  "bucketId": "bucket-uuid"
+}
+```
+
+### 获取下载预签名 URL
+
+```http
+GET /api/presign/download/<fileId>
+Authorization: Bearer <token>
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "downloadUrl": "https://...",
+    "fileName": "example.zip",
+    "mimeType": "application/zip",
+    "size": 52428800,
+    "expiresIn": 21600
+  }
+}
+```
+
+或返回 `{ "useProxy": true, "proxyUrl": "/api/files/<fileId>/download" }`。
+
+### 获取预览预签名 URL
+
+```http
+GET /api/presign/preview/<fileId>
+Authorization: Bearer <token>
 ```
 
 ---
@@ -350,27 +623,22 @@ Content-Type: application/json
 }
 ```
 
-### 获取分享信息
+### 获取分享信息（公开）
 
 ```http
-GET /api/share/<shareId>
+GET /api/share/<shareId>?password=<密码>
 ```
 
-### 访问分享（需要密码时）
+### 分享预览（公开，仅图片）
 
 ```http
-POST /api/share/<shareId>/access
-Content-Type: application/json
-
-{
-  "password": "访问密码"
-}
+GET /api/share/<shareId>/preview?password=<密码>
 ```
 
-### 下载分享文件
+### 下载分享文件（公开）
 
 ```http
-GET /api/share/<shareId>/download
+GET /api/share/<shareId>/download?password=<密码>
 ```
 
 ### 列出我的分享
@@ -391,7 +659,7 @@ Authorization: Bearer <token>
 
 ## 批量操作接口
 
-### 批量删除
+### 批量删除（移至回收站）
 
 ```http
 POST /api/batch/delete
@@ -400,6 +668,18 @@ Content-Type: application/json
 
 {
   "fileIds": ["id1", "id2", "id3"]
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "success": 3,
+    "failed": 0,
+    "errors": []
+  }
 }
 ```
 
@@ -425,7 +705,47 @@ Content-Type: application/json
 
 {
   "fileIds": ["id1", "id2"],
-  "targetParentId": "folder-id"
+  "targetParentId": "folder-id",
+  "targetBucketId": "bucket-id"
+}
+```
+
+### 批量重命名
+
+```http
+POST /api/batch/rename
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "items": [
+    { "fileId": "id1", "newName": "新名称1" },
+    { "fileId": "id2", "newName": "新名称2" }
+  ]
+}
+```
+
+### 批量永久删除
+
+```http
+POST /api/batch/permanent-delete
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "fileIds": ["id1", "id2"]
+}
+```
+
+### 批量恢复
+
+```http
+POST /api/batch/restore
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "fileIds": ["id1", "id2"]
 }
 ```
 
@@ -436,8 +756,42 @@ Content-Type: application/json
 ### 搜索文件
 
 ```http
-GET /api/search?q=keyword&type=all&tags=tag1,tag2
+GET /api/search?query=keyword&parentId=folderId&recursive=true&tags=tag1,tag2&mimeType=image/*&minSize=0&maxSize=10485760&createdAfter=2024-01-01T00:00:00Z&createdBefore=2024-12-31T23:59:59Z&isFolder=false&bucketId=bucket-id&sortBy=createdAt&sortOrder=desc&page=1&limit=50
 Authorization: Bearer <token>
+```
+
+**查询参数**:
+- `query`: 搜索关键词
+- `parentId`: 搜索范围（文件夹ID）
+- `recursive`: 是否递归搜索子文件夹
+- `tags`: 标签过滤（逗号分隔）
+- `mimeType`: MIME类型过滤（支持通配符如 `image/*`）
+- `minSize` / `maxSize`: 文件大小范围（字节）
+- `createdAfter` / `createdBefore`: 创建时间范围
+- `updatedAfter` / `updatedBefore`: 更新时间范围
+- `isFolder`: 是否只搜索文件夹
+- `bucketId`: 存储桶过滤
+- `sortBy`: 排序字段（`name`, `size`, `createdAt`, `updatedAt`）
+- `sortOrder`: 排序方向（`asc`, `desc`）
+- `page` / `limit`: 分页
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [],
+    "total": 100,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 2,
+    "aggregations": {
+      "types": { "image": 50, "video": 30 },
+      "mimeTypes": { "image/jpeg": 30, "image/png": 20 },
+      "sizeRange": { "min": 1024, "max": 10485760 }
+    }
+  }
+}
 ```
 
 ### 高级搜索
@@ -448,14 +802,36 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "query": "keyword",
-  "mimeType": "image/",
-  "minSize": 0,
-  "maxSize": 10485760,
-  "startDate": "2024-01-01",
-  "endDate": "2024-12-31",
-  "tags": ["tag1"]
+  "conditions": [
+    { "field": "name", "operator": "contains", "value": "report" },
+    { "field": "size", "operator": "gte", "value": 1048576 }
+  ],
+  "logic": "and",
+  "sortBy": "createdAt",
+  "sortOrder": "desc",
+  "page": 1,
+  "limit": 50
 }
+```
+
+**支持的 field**: `name`, `mimeType`, `size`, `createdAt`, `updatedAt`, `tags`
+
+**支持的 operator**: `contains`, `equals`, `startsWith`, `endsWith`, `gt`, `gte`, `lt`, `lte`, `in`
+
+### 搜索建议
+
+```http
+GET /api/search/suggestions?q=keyword&type=name
+Authorization: Bearer <token>
+```
+
+**type**: `name`（文件名）, `tags`（标签）, `mime`（MIME类型）
+
+### 最近文件
+
+```http
+GET /api/search/recent?limit=20
+Authorization: Bearer <token>
 ```
 
 ---
@@ -476,6 +852,8 @@ Content-Type: application/json
 }
 ```
 
+**permission**: `read`（只读）, `write`（读写）, `admin`（管理）
+
 ### 撤销权限
 
 ```http
@@ -487,6 +865,52 @@ Content-Type: application/json
   "fileId": "file-id",
   "userId": "user-id"
 }
+```
+
+### 获取文件权限列表
+
+```http
+GET /api/permissions/file/<fileId>
+Authorization: Bearer <token>
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "isOwner": true,
+    "permissions": [
+      { "id", "userId", "permission", "grantedBy", "userName", "userEmail", "createdAt" }
+    ]
+  }
+}
+```
+
+### 检查权限
+
+```http
+GET /api/permissions/check/<fileId>
+Authorization: Bearer <token>
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "hasAccess": true,
+    "permission": "admin",
+    "isOwner": true
+  }
+}
+```
+
+### 搜索用户（用于授权）
+
+```http
+GET /api/permissions/users/search?q=email@example.com
+Authorization: Bearer <token>
 ```
 
 ### 添加标签
@@ -516,6 +940,32 @@ Content-Type: application/json
 }
 ```
 
+### 获取文件标签
+
+```http
+GET /api/permissions/tags/file/<fileId>
+Authorization: Bearer <token>
+```
+
+### 获取用户所有标签
+
+```http
+GET /api/permissions/tags/user
+Authorization: Bearer <token>
+```
+
+### 批量获取标签
+
+```http
+POST /api/permissions/tags/batch
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "fileIds": ["id1", "id2"]
+}
+```
+
 ---
 
 ## 上传任务接口
@@ -536,6 +986,24 @@ Content-Type: application/json
 }
 ```
 
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "uuid",
+    "fileId": "uuid",
+    "uploadId": "upload-id",
+    "r2Key": "files/userId/fileId/large-file.iso",
+    "bucketId": "bucket-uuid",
+    "totalParts": 100,
+    "partSize": 52428800,
+    "firstPartUrl": "https://...",
+    "expiresAt": "2024-01-02T00:00:00Z"
+  }
+}
+```
+
 ### 获取分片上传 URL
 
 ```http
@@ -547,6 +1015,32 @@ Content-Type: application/json
   "taskId": "uuid",
   "partNumber": 1
 }
+```
+
+### 标记分片完成
+
+```http
+POST /api/tasks/part-done
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "taskId": "uuid",
+  "partNumber": 1,
+  "etag": "etag-value"
+}
+```
+
+### 代理上传分片
+
+```http
+POST /api/tasks/part-proxy
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+taskId: <taskId>
+partNumber: <partNumber>
+chunk: <二进制数据>
 ```
 
 ### 完成上传任务
@@ -564,10 +1058,78 @@ Content-Type: application/json
 }
 ```
 
+### 取消上传任务
+
+```http
+POST /api/tasks/abort
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "taskId": "uuid"
+}
+```
+
 ### 列出上传任务
 
 ```http
 GET /api/tasks/list
+Authorization: Bearer <token>
+```
+
+### 获取单个任务
+
+```http
+GET /api/tasks/<taskId>
+Authorization: Bearer <token>
+```
+
+### 删除任务
+
+```http
+DELETE /api/tasks/<taskId>
+Authorization: Bearer <token>
+```
+
+### 暂停任务
+
+```http
+POST /api/tasks/<taskId>/pause
+Authorization: Bearer <token>
+```
+
+### 恢复任务
+
+```http
+POST /api/tasks/<taskId>/resume
+Authorization: Bearer <token>
+```
+
+### 清空历史任务
+
+```http
+DELETE /api/tasks/clear
+Authorization: Bearer <token>
+```
+
+### 清空已完成任务
+
+```http
+DELETE /api/tasks/clear-completed
+Authorization: Bearer <token>
+```
+
+### 清空失败任务
+
+```http
+DELETE /api/tasks/clear-failed
+Authorization: Bearer <token>
+```
+
+### 清空所有任务
+
+```http
+DELETE /api/tasks/clear-all
 Authorization: Bearer <token>
 ```
 
@@ -593,7 +1155,37 @@ Content-Type: application/json
 ### 列出下载任务
 
 ```http
-GET /api/downloads/list
+GET /api/downloads/list?status=completed&page=1&limit=20
+Authorization: Bearer <token>
+```
+
+**status**: `pending`, `downloading`, `completed`, `failed`, `paused`
+
+### 获取单个任务
+
+```http
+GET /api/downloads/<taskId>
+Authorization: Bearer <token>
+```
+
+### 更新任务
+
+```http
+PATCH /api/downloads/<taskId>
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "fileName": "new-name.zip",
+  "parentId": "folder-id",
+  "bucketId": "bucket-id"
+}
+```
+
+### 删除任务
+
+```http
+DELETE /api/downloads/<taskId>
 Authorization: Bearer <token>
 ```
 
@@ -601,6 +1193,34 @@ Authorization: Bearer <token>
 
 ```http
 POST /api/downloads/<taskId>/retry
+Authorization: Bearer <token>
+```
+
+### 暂停任务
+
+```http
+POST /api/downloads/<taskId>/pause
+Authorization: Bearer <token>
+```
+
+### 恢复任务
+
+```http
+POST /api/downloads/<taskId>/resume
+Authorization: Bearer <token>
+```
+
+### 清理已完成任务
+
+```http
+DELETE /api/downloads/completed
+Authorization: Bearer <token>
+```
+
+### 清理失败任务
+
+```http
+DELETE /api/downloads/failed
 Authorization: Bearer <token>
 ```
 
@@ -615,6 +1235,26 @@ GET /api/preview/<fileId>/info
 Authorization: Bearer <token>
 ```
 
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "file-id",
+    "name": "document.pdf",
+    "size": 1048576,
+    "mimeType": "application/pdf",
+    "previewable": true,
+    "previewType": "pdf",
+    "language": null,
+    "extension": ".pdf",
+    "canPreview": true
+  }
+}
+```
+
+**previewType**: `image`, `video`, `audio`, `pdf`, `text`, `markdown`, `code`, `office`, `unknown`
+
 ### 获取原始内容
 
 ```http
@@ -622,21 +1262,140 @@ GET /api/preview/<fileId>/raw
 Authorization: Bearer <token>
 ```
 
+返回文本内容（限 10MB 以内文件）。
+
+### 流式预览
+
+```http
+GET /api/preview/<fileId>/stream
+Authorization: Bearer <token>
+```
+
+支持 Range 请求，适用于视频/音频流式播放。
+
 ### 获取缩略图
 
 ```http
-GET /api/preview/<fileId>/thumbnail
+GET /api/preview/<fileId>/thumbnail?width=256&height=256
 Authorization: Bearer <token>
 ```
+
+仅支持图片文件。
+
+### Office 文档预览
+
+```http
+GET /api/preview/<fileId>/office
+Authorization: Bearer <token>
+```
+
+返回 Base64 编码的文件内容，用于前端 Office 预览组件。
 
 ---
 
 ## 管理员接口
 
-### 获取审计日志
+所有管理员接口需要 `admin` 角色。
+
+### 获取用户列表
 
 ```http
-GET /api/admin/audit-logs?page=1&limit=50
+GET /api/admin/users
+Authorization: Bearer <token>
+```
+
+**响应**: 返回用户列表，包含 `fileCount` 和 `bucketCount`。
+
+### 获取单个用户
+
+```http
+GET /api/admin/users/<userId>
+Authorization: Bearer <token>
+```
+
+### 更新用户
+
+```http
+PATCH /api/admin/users/<userId>
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "新名称",
+  "role": "user",
+  "storageQuota": 21474836480,
+  "newPassword": "new-password"
+}
+```
+
+### 删除用户
+
+```http
+DELETE /api/admin/users/<userId>
+Authorization: Bearer <token>
+```
+
+### 获取注册配置
+
+```http
+GET /api/admin/registration
+Authorization: Bearer <token>
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "open": true,
+    "requireInviteCode": false,
+    "inviteCodes": [
+      { "code": "XXXX-XXXX-XXXX", "usedBy": null, "createdAt": "2024-01-01T00:00:00Z" }
+    ]
+  }
+}
+```
+
+### 更新注册配置
+
+```http
+PUT /api/admin/registration
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "open": false,
+  "requireInviteCode": true
+}
+```
+
+### 创建邀请码
+
+```http
+POST /api/admin/registration/codes
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "count": 5
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "codes": ["XXXX-XXXX-XXXX", "YYYY-YYYY-YYYY"],
+    "createdAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+### 删除邀请码
+
+```http
+DELETE /api/admin/registration/codes/<code>
 Authorization: Bearer <token>
 ```
 
@@ -647,25 +1406,98 @@ GET /api/admin/stats
 Authorization: Bearer <token>
 ```
 
-### 获取用户列表
-
-```http
-GET /api/admin/users?page=1&limit=50
-Authorization: Bearer <token>
-```
-
-### 更新用户
-
-```http
-PUT /api/admin/users/<userId>
-Authorization: Bearer <token>
-Content-Type: application/json
-
+**响应**:
+```json
 {
-  "storageQuota": 21474836480,
-  "role": "user"
+  "success": true,
+  "data": {
+    "userCount": 100,
+    "adminCount": 2,
+    "fileCount": 5000,
+    "folderCount": 200,
+    "bucketCount": 50,
+    "totalStorageUsed": 107374182400,
+    "totalStorageQuota": 1073741824000,
+    "providerBreakdown": {
+      "s3": { "bucketCount": 30, "storageUsed": 52428800000 },
+      "r2": { "bucketCount": 20, "storageUsed": 54945382400 }
+    }
+  }
 }
 ```
+
+### 获取审计日志
+
+```http
+GET /api/admin/audit-logs?page=1&limit=50&userId=user-id&action=user.login
+Authorization: Bearer <token>
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "log-id",
+        "userId": "user-id",
+        "userEmail": "user@example.com",
+        "action": "user.login",
+        "resourceType": "user",
+        "resourceId": "user-id",
+        "details": {},
+        "status": "success",
+        "errorMessage": null,
+        "ipAddress": "192.168.1.1",
+        "userAgent": "Mozilla/5.0...",
+        "createdAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "total": 1000,
+    "page": 1,
+    "limit": 50
+  }
+}
+```
+
+---
+
+## 定时任务接口
+
+这些接口通常由 Cloudflare Cron Triggers 调用。
+
+### 回收站清理
+
+```http
+POST /api/cron/trash-cleanup
+```
+
+清理超过保留期的回收站文件。
+
+### 会话清理
+
+```http
+POST /api/cron/session-cleanup
+```
+
+清理过期的 WebDAV 会话、上传任务和登录记录。
+
+### 分享清理
+
+```http
+POST /api/cron/share-cleanup
+```
+
+清理过期的分享链接。
+
+### 全量清理
+
+```http
+POST /api/cron/all
+```
+
+执行所有清理任务。
 
 ---
 
@@ -693,3 +1525,49 @@ WebDAV 协议端点: `/dav`
 | 删除        | DELETE   | 永久删除                      |
 | 移动/重命名 | MOVE     | 需要 Destination 头           |
 | 复制        | COPY     | 需要 Destination 头           |
+
+### PROPFIND 示例
+
+```http
+PROPFIND /dav/ HTTP/1.1
+Host: your-domain.com
+Authorization: Basic base64(email:password)
+Depth: 1
+```
+
+### PUT 上传示例
+
+```http
+PUT /dav/folder/file.txt HTTP/1.1
+Host: your-domain.com
+Authorization: Basic base64(email:password)
+Content-Type: text/plain
+
+文件内容...
+```
+
+### MKCOL 创建目录示例
+
+```http
+MKCOL /dav/new-folder/ HTTP/1.1
+Host: your-domain.com
+Authorization: Basic base64(email:password)
+```
+
+### MOVE 移动示例
+
+```http
+MOVE /dav/old-name.txt HTTP/1.1
+Host: your-domain.com
+Authorization: Basic base64(email:password)
+Destination: https://your-domain.com/dav/new-name.txt
+```
+
+### COPY 复制示例
+
+```http
+COPY /dav/file.txt HTTP/1.1
+Host: your-domain.com
+Authorization: Basic base64(email:password)
+Destination: https://your-domain.com/dav/copy-of-file.txt
+```
