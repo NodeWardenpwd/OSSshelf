@@ -35,14 +35,6 @@ export interface GalleryItemProps {
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
-export interface ActionBtnProps {
-  title: string;
-  onClick: () => void;
-  danger?: boolean;
-  light?: boolean;
-  children: React.ReactNode;
-}
-
 export interface AdvancedSearchCondition {
   field: 'name' | 'mimeType' | 'size' | 'createdAt' | 'updatedAt' | 'tags';
   operator: 'contains' | 'equals' | 'startsWith' | 'endsWith' | 'gt' | 'gte' | 'lt' | 'lte' | 'in';
