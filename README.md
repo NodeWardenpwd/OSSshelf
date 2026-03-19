@@ -19,13 +19,13 @@
 
 ## 技术栈
 
-| 组件     | 技术                                      |
-| -------- | ----------------------------------------- |
-| 前端     | React 18 + Vite 5 + Tailwind CSS 3        |
-| 后端     | Hono 4 + Cloudflare Workers               |
-| 数据库   | Cloudflare D1 (SQLite) + Drizzle ORM      |
-| 存储     | S3 兼容协议 (R2/S3/OSS/COS/OBS/B2/MinIO)  |
-| 认证     | JWT + bcrypt                              |
+| 组件   | 技术                                     |
+| ------ | ---------------------------------------- |
+| 前端   | React 18 + Vite 5 + Tailwind CSS 3       |
+| 后端   | Hono 4 + Cloudflare Workers              |
+| 数据库 | Cloudflare D1 (SQLite) + Drizzle ORM     |
+| 存储   | S3 兼容协议 (R2/S3/OSS/COS/OBS/B2/MinIO) |
+| 认证   | JWT + bcrypt                             |
 
 ## 快速开始
 
@@ -144,21 +144,21 @@ ossshelf/
 
 ### API 路由概览
 
-| 路由前缀        | 说明         |
-| --------------- | ------------ |
-| /api/auth       | 用户认证     |
-| /api/files      | 文件管理     |
-| /api/buckets    | 存储桶管理   |
-| /api/share      | 文件分享     |
-| /api/presign    | 预签名 URL   |
-| /api/tasks      | 上传任务     |
-| /api/downloads  | 离线下载     |
-| /api/batch      | 批量操作     |
-| /api/search     | 文件搜索     |
-| /api/permissions| 权限管理     |
-| /api/preview    | 文件预览     |
-| /api/admin      | 管理员接口   |
-| /dav            | WebDAV       |
+| 路由前缀         | 说明       |
+| ---------------- | ---------- |
+| /api/auth        | 用户认证   |
+| /api/files       | 文件管理   |
+| /api/buckets     | 存储桶管理 |
+| /api/share       | 文件分享   |
+| /api/presign     | 预签名 URL |
+| /api/tasks       | 上传任务   |
+| /api/downloads   | 离线下载   |
+| /api/batch       | 批量操作   |
+| /api/search      | 文件搜索   |
+| /api/permissions | 权限管理   |
+| /api/preview     | 文件预览   |
+| /api/admin       | 管理员接口 |
+| /dav             | WebDAV     |
 
 ## 部署
 
@@ -185,18 +185,18 @@ wrangler pages deploy apps/web/dist --project-name=ossshelf-web
 
 ## 系统限制
 
-| 限制项               | 值          |
-| -------------------- | ----------- |
-| 单文件最大大小       | 5 GB        |
-| 默认存储配额         | 10 GB       |
-| 分片上传阈值         | 100 MB      |
-| 分片大小             | 10 MB       |
-| 最大并发分片         | 3           |
-| JWT 有效期           | 7 天        |
-| WebDAV 会话有效期    | 30 天       |
-| 回收站保留期         | 30 天       |
-| 登录失败锁定次数     | 5 次        |
-| 登录锁定时长         | 15 分钟     |
+| 限制项            | 值      |
+| ----------------- | ------- |
+| 单文件最大大小    | 5 GB    |
+| 默认存储配额      | 10 GB   |
+| 分片上传阈值      | 100 MB  |
+| 分片大小          | 10 MB   |
+| 最大并发分片      | 3       |
+| JWT 有效期        | 7 天    |
+| WebDAV 会话有效期 | 30 天   |
+| 回收站保留期      | 30 天   |
+| 登录失败锁定次数  | 5 次    |
+| 登录锁定时长      | 15 分钟 |
 
 ## 开发命令
 

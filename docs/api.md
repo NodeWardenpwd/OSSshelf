@@ -31,26 +31,26 @@
 
 ## 错误码列表
 
-| 错误码                       | 描述                         |
-| ---------------------------- | ---------------------------- |
-| UNAUTHORIZED                 | 未授权，Token 无效或过期     |
-| FORBIDDEN                    | 禁止访问，权限不足           |
-| NOT_FOUND                    | 资源不存在                   |
-| VALIDATION_ERROR             | 参数验证失败                 |
-| FILE_TOO_LARGE               | 文件大小超过限制             |
-| STORAGE_EXCEEDED             | 存储空间不足                 |
-| SHARE_EXPIRED                | 分享链接已过期               |
-| SHARE_PASSWORD_REQUIRED      | 分享需要密码                 |
-| SHARE_PASSWORD_INVALID       | 分享密码错误                 |
-| SHARE_DOWNLOAD_LIMIT_EXCEEDED| 分享下载次数已达上限         |
-| LOGIN_LOCKED                 | 登录已被锁定                 |
-| PERMISSION_DENIED            | 权限不足                     |
-| TASK_EXPIRED                 | 上传任务已过期               |
-| INTERNAL_ERROR               | 服务器内部错误               |
-| REGISTRATION_CLOSED          | 注册已关闭                   |
-| INVITE_CODE_REQUIRED         | 需要邀请码                   |
-| INVITE_CODE_INVALID          | 邀请码无效                   |
-| INVITE_CODE_USED             | 邀请码已使用                 |
+| 错误码                        | 描述                     |
+| ----------------------------- | ------------------------ |
+| UNAUTHORIZED                  | 未授权，Token 无效或过期 |
+| FORBIDDEN                     | 禁止访问，权限不足       |
+| NOT_FOUND                     | 资源不存在               |
+| VALIDATION_ERROR              | 参数验证失败             |
+| FILE_TOO_LARGE                | 文件大小超过限制         |
+| STORAGE_EXCEEDED              | 存储空间不足             |
+| SHARE_EXPIRED                 | 分享链接已过期           |
+| SHARE_PASSWORD_REQUIRED       | 分享需要密码             |
+| SHARE_PASSWORD_INVALID        | 分享密码错误             |
+| SHARE_DOWNLOAD_LIMIT_EXCEEDED | 分享下载次数已达上限     |
+| LOGIN_LOCKED                  | 登录已被锁定             |
+| PERMISSION_DENIED             | 权限不足                 |
+| TASK_EXPIRED                  | 上传任务已过期           |
+| INTERNAL_ERROR                | 服务器内部错误           |
+| REGISTRATION_CLOSED           | 注册已关闭               |
+| INVITE_CODE_REQUIRED          | 需要邀请码               |
+| INVITE_CODE_INVALID           | 邀请码无效               |
+| INVITE_CODE_USED              | 邀请码已使用             |
 
 ---
 
@@ -79,6 +79,7 @@ Content-Type: application/json
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -105,6 +106,7 @@ Content-Type: application/json
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -178,6 +180,7 @@ Authorization: Bearer <token>
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -206,6 +209,7 @@ Authorization: Bearer <token>
 ```
 
 **查询参数**:
+
 - `parentId`: 父文件夹ID（可选）
 - `search`: 搜索关键词（可选）
 - `sortBy`: 排序字段，默认 `createdAt`
@@ -309,6 +313,7 @@ Authorization: Bearer <token>
 ```
 
 或通过 URL 参数传递 token：
+
 ```http
 GET /api/files/<fileId>/preview?token=<jwt-token>
 ```
@@ -458,6 +463,7 @@ Content-Type: application/json
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -508,6 +514,7 @@ Content-Type: application/json
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -582,6 +589,7 @@ Authorization: Bearer <token>
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -672,6 +680,7 @@ Content-Type: application/json
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -761,6 +770,7 @@ Authorization: Bearer <token>
 ```
 
 **查询参数**:
+
 - `query`: 搜索关键词
 - `parentId`: 搜索范围（文件夹ID）
 - `recursive`: 是否递归搜索子文件夹
@@ -776,6 +786,7 @@ Authorization: Bearer <token>
 - `page` / `limit`: 分页
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -875,6 +886,7 @@ Authorization: Bearer <token>
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -895,6 +907,7 @@ Authorization: Bearer <token>
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -987,6 +1000,7 @@ Content-Type: application/json
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -1236,6 +1250,7 @@ Authorization: Bearer <token>
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -1343,15 +1358,14 @@ Authorization: Bearer <token>
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
   "data": {
     "open": true,
     "requireInviteCode": false,
-    "inviteCodes": [
-      { "code": "XXXX-XXXX-XXXX", "usedBy": null, "createdAt": "2024-01-01T00:00:00Z" }
-    ]
+    "inviteCodes": [{ "code": "XXXX-XXXX-XXXX", "usedBy": null, "createdAt": "2024-01-01T00:00:00Z" }]
   }
 }
 ```
@@ -1382,6 +1396,7 @@ Content-Type: application/json
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -1407,6 +1422,7 @@ Authorization: Bearer <token>
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,
@@ -1434,6 +1450,7 @@ Authorization: Bearer <token>
 ```
 
 **响应**:
+
 ```json
 {
   "success": true,

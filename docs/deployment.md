@@ -287,19 +287,20 @@ crons = ["0 3 * * *"]  # 每天凌晨 3 点执行
 ```
 
 定时任务包括：
+
 - 回收站清理（清理超过 30 天的文件）
 - 会话清理（清理过期的 WebDAV 会话、上传任务）
 - 分享清理（清理过期的分享链接）
 
 ## 环境变量说明
 
-| 变量名        | 说明                     | 必需 |
-| ------------- | ------------------------ | ---- |
-| DB            | D1 数据库绑定            | 是   |
-| KV            | KV 命名空间绑定          | 是   |
-| FILES         | R2 存储桶绑定（遗留）    | 否   |
-| ENVIRONMENT   | 环境 (development/production) | 是 |
-| JWT_SECRET    | JWT 签名密钥             | 是   |
+| 变量名      | 说明                          | 必需 |
+| ----------- | ----------------------------- | ---- |
+| DB          | D1 数据库绑定                 | 是   |
+| KV          | KV 命名空间绑定               | 是   |
+| FILES       | R2 存储桶绑定（遗留）         | 否   |
+| ENVIRONMENT | 环境 (development/production) | 是   |
+| JWT_SECRET  | JWT 签名密钥                  | 是   |
 
 ## 数据库管理
 
@@ -359,6 +360,7 @@ wrangler tail --format json
 ```
 
 在 Cloudflare 控制台可以查看：
+
 - Workers 日志
 - D1 查询日志
 - Cron 触发历史
@@ -381,16 +383,19 @@ wrangler d1 export ossshelf-db --output backup.sql
 ### 更新步骤
 
 1. 拉取最新代码
+
    ```bash
    git pull
    ```
 
 2. 安装依赖
+
    ```bash
    pnpm install
    ```
 
 3. 检查数据库迁移
+
    ```bash
    pnpm db:generate
    pnpm db:migrate

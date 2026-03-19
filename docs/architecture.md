@@ -7,6 +7,7 @@ OSSshelf 是一个基于 Cloudflare 部署的多厂商 OSS 文件管理系统，
 ## 技术栈
 
 ### 前端 (apps/web)
+
 - **框架**: React 18
 - **构建工具**: Vite 5
 - **路由**: React Router DOM 6
@@ -19,6 +20,7 @@ OSSshelf 是一个基于 Cloudflare 部署的多厂商 OSS 文件管理系统，
 - **Office 预览**: docx-preview
 
 ### 后端 (apps/api)
+
 - **框架**: Hono 4
 - **运行时**: Cloudflare Workers
 - **数据库**: Cloudflare D1 (SQLite)
@@ -27,6 +29,7 @@ OSSshelf 是一个基于 Cloudflare 部署的多厂商 OSS 文件管理系统，
 - **对象存储**: S3 兼容协议 (R2, AWS S3, 阿里云 OSS, 腾讯云 COS, 华为云 OBS, Backblaze B2, MinIO 等)
 
 ### 共享包 (packages/shared)
+
 - **构建工具**: tsup
 - **内容**: 常量定义、类型定义、工具函数
 
@@ -103,223 +106,239 @@ ossshelf/
 ### 表结构
 
 #### users (用户表)
-| 字段           | 类型      | 说明               |
-| -------------- | --------- | ------------------ |
-| id             | TEXT      | 主键               |
-| email          | TEXT      | 邮箱 (唯一)        |
-| password_hash  | TEXT      | 密码哈希           |
-| name           | TEXT      | 昵称               |
-| role           | TEXT      | 角色 (user/admin)  |
-| storage_quota  | INTEGER   | 存储配额 (字节)    |
-| storage_used   | INTEGER   | 已用空间 (字节)    |
-| created_at     | TEXT      | 创建时间           |
-| updated_at     | TEXT      | 更新时间           |
+
+| 字段          | 类型    | 说明              |
+| ------------- | ------- | ----------------- |
+| id            | TEXT    | 主键              |
+| email         | TEXT    | 邮箱 (唯一)       |
+| password_hash | TEXT    | 密码哈希          |
+| name          | TEXT    | 昵称              |
+| role          | TEXT    | 角色 (user/admin) |
+| storage_quota | INTEGER | 存储配额 (字节)   |
+| storage_used  | INTEGER | 已用空间 (字节)   |
+| created_at    | TEXT    | 创建时间          |
+| updated_at    | TEXT    | 更新时间          |
 
 #### files (文件表)
-| 字段               | 类型      | 说明                     |
-| ------------------ | --------- | ------------------------ |
-| id                 | TEXT      | 主键                     |
-| user_id            | TEXT      | 所属用户                 |
-| parent_id          | TEXT      | 父文件夹 ID              |
-| name               | TEXT      | 文件名                   |
-| path               | TEXT      | 文件路径                 |
-| type               | TEXT      | 文件类型                 |
-| size               | INTEGER   | 文件大小                 |
-| r2_key             | TEXT      | 对象存储键               |
-| mime_type          | TEXT      | MIME 类型                |
-| hash               | TEXT      | 文件哈希                 |
-| is_folder          | BOOLEAN   | 是否为文件夹             |
-| allowed_mime_types | TEXT      | 文件夹允许的上传类型     |
-| bucket_id          | TEXT      | 所属存储桶 ID            |
-| created_at         | TEXT      | 创建时间                 |
-| updated_at         | TEXT      | 更新时间                 |
-| deleted_at         | TEXT      | 删除时间 (回收站)        |
+
+| 字段               | 类型    | 说明                 |
+| ------------------ | ------- | -------------------- |
+| id                 | TEXT    | 主键                 |
+| user_id            | TEXT    | 所属用户             |
+| parent_id          | TEXT    | 父文件夹 ID          |
+| name               | TEXT    | 文件名               |
+| path               | TEXT    | 文件路径             |
+| type               | TEXT    | 文件类型             |
+| size               | INTEGER | 文件大小             |
+| r2_key             | TEXT    | 对象存储键           |
+| mime_type          | TEXT    | MIME 类型            |
+| hash               | TEXT    | 文件哈希             |
+| is_folder          | BOOLEAN | 是否为文件夹         |
+| allowed_mime_types | TEXT    | 文件夹允许的上传类型 |
+| bucket_id          | TEXT    | 所属存储桶 ID        |
+| created_at         | TEXT    | 创建时间             |
+| updated_at         | TEXT    | 更新时间             |
+| deleted_at         | TEXT    | 删除时间 (回收站)    |
 
 #### storage_buckets (存储桶表)
-| 字段              | 类型      | 说明                     |
-| ----------------- | --------- | ------------------------ |
-| id                | TEXT      | 主键                     |
-| user_id           | TEXT      | 所属用户                 |
-| name              | TEXT      | 显示名称                 |
-| provider          | TEXT      | 提供商 (s3/r2/oss/cos等) |
-| bucket_name       | TEXT      | 存储桶名称               |
-| endpoint          | TEXT      | 端点 URL                 |
-| region            | TEXT      | 区域                     |
-| access_key_id     | TEXT      | Access Key ID            |
-| secret_access_key | TEXT      | Secret Access Key        |
-| path_style        | BOOLEAN   | 是否使用路径样式         |
-| is_default        | BOOLEAN   | 是否为默认存储桶         |
-| is_active         | BOOLEAN   | 是否启用                 |
-| storage_used      | INTEGER   | 已用空间                 |
-| file_count        | INTEGER   | 文件数量                 |
-| storage_quota     | INTEGER   | 存储配额                 |
-| notes             | TEXT      | 备注                     |
-| created_at        | TEXT      | 创建时间                 |
-| updated_at        | TEXT      | 更新时间                 |
+
+| 字段              | 类型    | 说明                     |
+| ----------------- | ------- | ------------------------ |
+| id                | TEXT    | 主键                     |
+| user_id           | TEXT    | 所属用户                 |
+| name              | TEXT    | 显示名称                 |
+| provider          | TEXT    | 提供商 (s3/r2/oss/cos等) |
+| bucket_name       | TEXT    | 存储桶名称               |
+| endpoint          | TEXT    | 端点 URL                 |
+| region            | TEXT    | 区域                     |
+| access_key_id     | TEXT    | Access Key ID            |
+| secret_access_key | TEXT    | Secret Access Key        |
+| path_style        | BOOLEAN | 是否使用路径样式         |
+| is_default        | BOOLEAN | 是否为默认存储桶         |
+| is_active         | BOOLEAN | 是否启用                 |
+| storage_used      | INTEGER | 已用空间                 |
+| file_count        | INTEGER | 文件数量                 |
+| storage_quota     | INTEGER | 存储配额                 |
+| notes             | TEXT    | 备注                     |
+| created_at        | TEXT    | 创建时间                 |
+| updated_at        | TEXT    | 更新时间                 |
 
 #### shares (分享表)
-| 字段           | 类型      | 说明               |
-| -------------- | --------- | ------------------ |
-| id             | TEXT      | 主键               |
-| file_id        | TEXT      | 关联文件 ID        |
-| user_id        | TEXT      | 创建者 ID          |
-| password       | TEXT      | 访问密码 (可选)    |
-| expires_at     | TEXT      | 过期时间           |
-| download_limit | INTEGER   | 下载次数限制       |
-| download_count | INTEGER   | 已下载次数         |
-| created_at     | TEXT      | 创建时间           |
+
+| 字段           | 类型    | 说明            |
+| -------------- | ------- | --------------- |
+| id             | TEXT    | 主键            |
+| file_id        | TEXT    | 关联文件 ID     |
+| user_id        | TEXT    | 创建者 ID       |
+| password       | TEXT    | 访问密码 (可选) |
+| expires_at     | TEXT    | 过期时间        |
+| download_limit | INTEGER | 下载次数限制    |
+| download_count | INTEGER | 已下载次数      |
+| created_at     | TEXT    | 创建时间        |
 
 #### file_permissions (文件权限表)
-| 字段       | 类型      | 说明                     |
-| ---------- | --------- | ------------------------ |
-| id         | TEXT      | 主键                     |
-| file_id    | TEXT      | 文件 ID                  |
-| user_id    | TEXT      | 用户 ID                  |
-| permission | TEXT      | 权限 (read/write/admin)  |
-| granted_by | TEXT      | 授权人 ID                |
-| created_at | TEXT      | 创建时间                 |
-| updated_at | TEXT      | 更新时间                 |
+
+| 字段       | 类型 | 说明                    |
+| ---------- | ---- | ----------------------- |
+| id         | TEXT | 主键                    |
+| file_id    | TEXT | 文件 ID                 |
+| user_id    | TEXT | 用户 ID                 |
+| permission | TEXT | 权限 (read/write/admin) |
+| granted_by | TEXT | 授权人 ID               |
+| created_at | TEXT | 创建时间                |
+| updated_at | TEXT | 更新时间                |
 
 #### file_tags (文件标签表)
-| 字段       | 类型      | 说明           |
-| ---------- | --------- | -------------- |
-| id         | TEXT      | 主键           |
-| file_id    | TEXT      | 文件 ID        |
-| user_id    | TEXT      | 用户 ID        |
-| name       | TEXT      | 标签名称       |
-| color      | TEXT      | 标签颜色       |
-| created_at | TEXT      | 创建时间       |
+
+| 字段       | 类型 | 说明     |
+| ---------- | ---- | -------- |
+| id         | TEXT | 主键     |
+| file_id    | TEXT | 文件 ID  |
+| user_id    | TEXT | 用户 ID  |
+| name       | TEXT | 标签名称 |
+| color      | TEXT | 标签颜色 |
+| created_at | TEXT | 创建时间 |
 
 #### upload_tasks (上传任务表)
-| 字段           | 类型      | 说明                     |
-| -------------- | --------- | ------------------------ |
-| id             | TEXT      | 主键                     |
-| user_id        | TEXT      | 用户 ID                  |
-| file_name      | TEXT      | 文件名                   |
-| file_size      | INTEGER   | 文件大小                 |
-| mime_type      | TEXT      | MIME 类型                |
-| parent_id      | TEXT      | 父文件夹 ID              |
-| bucket_id      | TEXT      | 存储桶 ID                |
-| r2_key         | TEXT      | 对象存储键               |
-| upload_id      | TEXT      | 分片上传 ID              |
-| total_parts    | INTEGER   | 总分片数                 |
-| uploaded_parts | TEXT      | 已上传分片 (JSON)        |
-| status         | TEXT      | 状态                     |
-| created_at     | TEXT      | 创建时间                 |
-| updated_at     | TEXT      | 更新时间                 |
-| expires_at     | TEXT      | 过期时间                 |
+
+| 字段           | 类型    | 说明              |
+| -------------- | ------- | ----------------- |
+| id             | TEXT    | 主键              |
+| user_id        | TEXT    | 用户 ID           |
+| file_name      | TEXT    | 文件名            |
+| file_size      | INTEGER | 文件大小          |
+| mime_type      | TEXT    | MIME 类型         |
+| parent_id      | TEXT    | 父文件夹 ID       |
+| bucket_id      | TEXT    | 存储桶 ID         |
+| r2_key         | TEXT    | 对象存储键        |
+| upload_id      | TEXT    | 分片上传 ID       |
+| total_parts    | INTEGER | 总分片数          |
+| uploaded_parts | TEXT    | 已上传分片 (JSON) |
+| status         | TEXT    | 状态              |
+| created_at     | TEXT    | 创建时间          |
+| updated_at     | TEXT    | 更新时间          |
+| expires_at     | TEXT    | 过期时间          |
 
 #### download_tasks (离线下载任务表)
-| 字段         | 类型      | 说明               |
-| ------------ | --------- | ------------------ |
-| id           | TEXT      | 主键               |
-| user_id      | TEXT      | 用户 ID            |
-| url          | TEXT      | 下载 URL           |
-| file_name    | TEXT      | 文件名             |
-| file_size    | INTEGER   | 文件大小           |
-| parent_id    | TEXT      | 父文件夹 ID        |
-| bucket_id    | TEXT      | 存储桶 ID          |
-| status       | TEXT      | 状态               |
-| progress     | INTEGER   | 进度百分比         |
-| error_message| TEXT      | 错误信息           |
-| created_at   | TEXT      | 创建时间           |
-| updated_at   | TEXT      | 更新时间           |
-| completed_at | TEXT      | 完成时间           |
+
+| 字段          | 类型    | 说明        |
+| ------------- | ------- | ----------- |
+| id            | TEXT    | 主键        |
+| user_id       | TEXT    | 用户 ID     |
+| url           | TEXT    | 下载 URL    |
+| file_name     | TEXT    | 文件名      |
+| file_size     | INTEGER | 文件大小    |
+| parent_id     | TEXT    | 父文件夹 ID |
+| bucket_id     | TEXT    | 存储桶 ID   |
+| status        | TEXT    | 状态        |
+| progress      | INTEGER | 进度百分比  |
+| error_message | TEXT    | 错误信息    |
+| created_at    | TEXT    | 创建时间    |
+| updated_at    | TEXT    | 更新时间    |
+| completed_at  | TEXT    | 完成时间    |
 
 #### webdav_sessions (WebDAV 会话表)
-| 字段       | 类型      | 说明           |
-| ---------- | --------- | -------------- |
-| id         | TEXT      | 主键           |
-| user_id    | TEXT      | 用户 ID        |
-| token      | TEXT      | 会话令牌       |
-| expires_at | TEXT      | 过期时间       |
-| created_at | TEXT      | 创建时间       |
+
+| 字段       | 类型 | 说明     |
+| ---------- | ---- | -------- |
+| id         | TEXT | 主键     |
+| user_id    | TEXT | 用户 ID  |
+| token      | TEXT | 会话令牌 |
+| expires_at | TEXT | 过期时间 |
+| created_at | TEXT | 创建时间 |
 
 #### user_devices (用户设备表)
-| 字段        | 类型      | 说明           |
-| ----------- | --------- | -------------- |
-| id          | TEXT      | 主键           |
-| user_id     | TEXT      | 用户 ID        |
-| device_id   | TEXT      | 设备 ID        |
-| device_name | TEXT      | 设备名称       |
-| device_type | TEXT      | 设备类型       |
-| ip_address  | TEXT      | IP 地址        |
-| user_agent  | TEXT      | User Agent     |
-| last_active | TEXT      | 最后活跃时间   |
-| created_at  | TEXT      | 创建时间       |
+
+| 字段        | 类型 | 说明         |
+| ----------- | ---- | ------------ |
+| id          | TEXT | 主键         |
+| user_id     | TEXT | 用户 ID      |
+| device_id   | TEXT | 设备 ID      |
+| device_name | TEXT | 设备名称     |
+| device_type | TEXT | 设备类型     |
+| ip_address  | TEXT | IP 地址      |
+| user_agent  | TEXT | User Agent   |
+| last_active | TEXT | 最后活跃时间 |
+| created_at  | TEXT | 创建时间     |
 
 #### login_attempts (登录尝试表)
-| 字段       | 类型      | 说明           |
-| ---------- | --------- | -------------- |
-| id         | TEXT      | 主键           |
-| email      | TEXT      | 邮箱           |
-| ip_address | TEXT      | IP 地址        |
-| success    | BOOLEAN   | 是否成功       |
-| user_agent | TEXT      | User Agent     |
-| created_at | TEXT      | 创建时间       |
+
+| 字段       | 类型    | 说明       |
+| ---------- | ------- | ---------- |
+| id         | TEXT    | 主键       |
+| email      | TEXT    | 邮箱       |
+| ip_address | TEXT    | IP 地址    |
+| success    | BOOLEAN | 是否成功   |
+| user_agent | TEXT    | User Agent |
+| created_at | TEXT    | 创建时间   |
 
 #### audit_logs (审计日志表)
-| 字段          | 类型      | 说明               |
-| ------------- | --------- | ------------------ |
-| id            | TEXT      | 主键               |
-| user_id       | TEXT      | 用户 ID            |
-| action        | TEXT      | 操作类型           |
-| resource_type | TEXT      | 资源类型           |
-| resource_id   | TEXT      | 资源 ID            |
-| details       | TEXT      | 详情 (JSON)        |
-| ip_address    | TEXT      | IP 地址            |
-| user_agent    | TEXT      | User Agent         |
-| status        | TEXT      | 状态               |
-| error_message | TEXT      | 错误信息           |
-| created_at    | TEXT      | 创建时间           |
+
+| 字段          | 类型 | 说明        |
+| ------------- | ---- | ----------- |
+| id            | TEXT | 主键        |
+| user_id       | TEXT | 用户 ID     |
+| action        | TEXT | 操作类型    |
+| resource_type | TEXT | 资源类型    |
+| resource_id   | TEXT | 资源 ID     |
+| details       | TEXT | 详情 (JSON) |
+| ip_address    | TEXT | IP 地址     |
+| user_agent    | TEXT | User Agent  |
+| status        | TEXT | 状态        |
+| error_message | TEXT | 错误信息    |
+| created_at    | TEXT | 创建时间    |
 
 ## API 路由
 
-| 路由前缀        | 模块           | 说明               |
-| --------------- | -------------- | ------------------ |
-| /api/auth       | auth.ts        | 用户认证           |
-| /api/files      | files.ts       | 文件管理           |
-| /api/buckets    | buckets.ts     | 存储桶管理         |
-| /api/share      | share.ts       | 文件分享           |
-| /api/presign    | presign.ts     | 预签名 URL         |
-| /api/tasks      | tasks.ts       | 上传任务           |
-| /api/downloads  | downloads.ts   | 离线下载           |
-| /api/batch      | batch.ts       | 批量操作           |
-| /api/search     | search.ts      | 文件搜索           |
-| /api/permissions| permissions.ts | 权限与标签         |
-| /api/preview    | preview.ts     | 文件预览           |
-| /api/admin      | admin.ts       | 管理员接口         |
-| /cron           | cron.ts        | 定时任务           |
-| /dav            | webdav.ts      | WebDAV 协议        |
+| 路由前缀         | 模块           | 说明        |
+| ---------------- | -------------- | ----------- |
+| /api/auth        | auth.ts        | 用户认证    |
+| /api/files       | files.ts       | 文件管理    |
+| /api/buckets     | buckets.ts     | 存储桶管理  |
+| /api/share       | share.ts       | 文件分享    |
+| /api/presign     | presign.ts     | 预签名 URL  |
+| /api/tasks       | tasks.ts       | 上传任务    |
+| /api/downloads   | downloads.ts   | 离线下载    |
+| /api/batch       | batch.ts       | 批量操作    |
+| /api/search      | search.ts      | 文件搜索    |
+| /api/permissions | permissions.ts | 权限与标签  |
+| /api/preview     | preview.ts     | 文件预览    |
+| /api/admin       | admin.ts       | 管理员接口  |
+| /cron            | cron.ts        | 定时任务    |
+| /dav             | webdav.ts      | WebDAV 协议 |
 
 ## 系统常量
 
 ### 文件限制
-| 常量                   | 值              | 说明               |
-| ---------------------- | --------------- | ------------------ |
-| MAX_FILE_SIZE          | 5 GB            | 单文件最大大小     |
-| DEFAULT_STORAGE_QUOTA  | 10 GB           | 默认存储配额       |
-| UPLOAD_CHUNK_SIZE      | 10 MB           | 分片上传大小       |
-| MULTIPART_THRESHOLD    | 100 MB          | 分片上传阈值       |
-| MAX_CONCURRENT_PARTS   | 3               | 最大并发分片数     |
+
+| 常量                  | 值     | 说明           |
+| --------------------- | ------ | -------------- |
+| MAX_FILE_SIZE         | 5 GB   | 单文件最大大小 |
+| DEFAULT_STORAGE_QUOTA | 10 GB  | 默认存储配额   |
+| UPLOAD_CHUNK_SIZE     | 10 MB  | 分片上传大小   |
+| MULTIPART_THRESHOLD   | 100 MB | 分片上传阈值   |
+| MAX_CONCURRENT_PARTS  | 3      | 最大并发分片数 |
 
 ### 时间限制
-| 常量                     | 值           | 说明               |
-| ------------------------ | ------------ | ------------------ |
-| JWT_EXPIRY               | 7 天         | JWT 有效期         |
-| WEBDAV_SESSION_EXPIRY    | 30 天        | WebDAV 会话有效期  |
-| SHARE_DEFAULT_EXPIRY     | 7 天         | 分享默认有效期     |
-| TRASH_RETENTION_DAYS     | 30 天        | 回收站保留天数     |
-| DEVICE_SESSION_EXPIRY    | 30 天        | 设备会话有效期     |
-| UPLOAD_TASK_EXPIRY       | 24 小时      | 上传任务有效期     |
+
+| 常量                  | 值      | 说明              |
+| --------------------- | ------- | ----------------- |
+| JWT_EXPIRY            | 7 天    | JWT 有效期        |
+| WEBDAV_SESSION_EXPIRY | 30 天   | WebDAV 会话有效期 |
+| SHARE_DEFAULT_EXPIRY  | 7 天    | 分享默认有效期    |
+| TRASH_RETENTION_DAYS  | 30 天   | 回收站保留天数    |
+| DEVICE_SESSION_EXPIRY | 30 天   | 设备会话有效期    |
+| UPLOAD_TASK_EXPIRY    | 24 小时 | 上传任务有效期    |
 
 ### 安全限制
-| 常量                   | 值          | 说明               |
-| ---------------------- | ----------- | ------------------ |
-| LOGIN_MAX_ATTEMPTS     | 5           | 最大登录尝试次数   |
-| LOGIN_LOCKOUT_DURATION | 15 分钟     | 登录锁定时长       |
+
+| 常量                   | 值      | 说明             |
+| ---------------------- | ------- | ---------------- |
+| LOGIN_MAX_ATTEMPTS     | 5       | 最大登录尝试次数 |
+| LOGIN_LOCKOUT_DURATION | 15 分钟 | 登录锁定时长     |
 
 ### 支持的存储提供商
+
 | Provider | 说明           |
 | -------- | -------------- |
 | r2       | Cloudflare R2  |
@@ -334,18 +353,21 @@ ossshelf/
 ## 认证机制
 
 ### JWT 认证
+
 - 用户登录后获取 JWT Token
 - Token 有效期 7 天
 - Token 存储在客户端，通过 `Authorization: Bearer <token>` 头传递
 - 支持多设备登录，每个设备有独立的设备 ID
 
 ### WebDAV 认证
+
 - 使用 Basic Auth 认证
 - 用户名：注册邮箱
 - 密码：账户密码
 - 认证成功后创建 WebDAV 会话，有效期 30 天
 
 ### 登录保护
+
 - 连续 5 次登录失败后锁定账户
 - 锁定时长 15 分钟
 - 记录所有登录尝试
@@ -353,17 +375,20 @@ ossshelf/
 ## 文件上传流程
 
 ### 小文件上传 (< 100MB)
+
 1. 前端直接 POST 到 `/api/files/upload`
 2. 后端代理上传到对象存储
 3. 创建文件记录
 
 ### 大文件上传 (>= 100MB)
+
 1. 前端调用 `/api/presign/upload` 获取预签名 URL
 2. 如果返回 `useProxy: true`，使用代理模式
 3. 如果返回预签名 URL，直接上传到对象存储
 4. 上传完成后调用 `/api/presign/confirm` 确认
 
 ### 分片上传流程
+
 1. 调用 `/api/presign/multipart/init` 初始化
 2. 循环获取每个分片的上传 URL
 3. 并发上传分片（最多 3 个并发）
@@ -373,11 +398,11 @@ ossshelf/
 
 系统通过 Cloudflare Cron Triggers 执行定时任务：
 
-| 任务            | 触发时间     | 说明                       |
-| --------------- | ------------ | -------------------------- |
-| 回收站清理      | 每天凌晨 3 点| 清理超过 30 天的回收站文件 |
-| 会话清理        | 每天凌晨 3 点| 清理过期的会话和任务       |
-| 分享清理        | 每天凌晨 3 点| 清理过期的分享链接         |
+| 任务       | 触发时间      | 说明                       |
+| ---------- | ------------- | -------------------------- |
+| 回收站清理 | 每天凌晨 3 点 | 清理超过 30 天的回收站文件 |
+| 会话清理   | 每天凌晨 3 点 | 清理过期的会话和任务       |
+| 分享清理   | 每天凌晨 3 点 | 清理过期的分享链接         |
 
 ## 安全措施
 
