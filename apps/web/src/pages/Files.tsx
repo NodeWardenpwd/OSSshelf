@@ -11,12 +11,12 @@
  * - 移动端触摸手势
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useFileStore, type ViewMode } from '@/stores/files';
 import { useAuthStore } from '@/stores/auth';
-import { filesApi, bucketsApi, permissionsApi, type StorageBucket } from '@/services/api';
+import { filesApi, bucketsApi, permissionsApi, shareApi, type StorageBucket } from '@/services/api';
 import { getPresignedDownloadUrl, presignUpload } from '@/services/presignUpload';
 import { useFileKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useFolderUpload } from '@/hooks/useFolderUpload';
@@ -52,6 +52,9 @@ import type { FileItem } from '@osshelf/shared';
 import { cn } from '@/utils';
 
 import { NewFolderDialog, ShareDialog, FileListContainer } from '@/components/files';
+import { UploadLinkDialog } from '@/components/files/ShareDialog';
+import { FolderPickerDialog } from '@/components/ui/FolderPickerDialog';
+import { MigrateBucketDialog } from '@/components/ui/MigrateBucketDialog';
 import { useFileMutations } from '@/hooks/useFileMutations';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { useFileSearch } from '@/hooks/useFileSearch';
@@ -112,6 +115,12 @@ export default function Files() {
     searchInputRef,
     resetNewFolderDialog,
   } = pageState;
+
+  // ── Phase 6 new state ──────────────────────────────────────────────────
+  const [uploadLinkFolder, setUploadLinkFolder] = useState<{ id: string; name: string } | null>(null);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [showMigrateDialog, setShowMigrateDialog] = useState(false);
+  const [shareFileItem, setShareFileItem] = useState<{ id: string; isFolder: boolean } | null>(null);
 
   const fileSearch = useFileSearch({ folderId });
   const {
@@ -222,6 +231,23 @@ export default function Files() {
     batchCopyMutation,
     checkTelegramLimit,
   } = fileMutations;
+
+  // Upload link creation
+  const createUploadLinkMutation = useMutation({
+    mutationFn: (params: Parameters<typeof shareApi.createUploadLink>[0]) =>
+      shareApi.createUploadLink(params),
+    onSuccess: (res) => {
+      const d = res.data.data;
+      if (d?.uploadToken) {
+        const url = `${window.location.origin}/upload/${d.uploadToken}`;
+        navigator.clipboard.writeText(url).then(() =>
+          toast({ title: '上传链接已复制', description: url })
+        );
+      }
+      setUploadLinkFolder(null);
+    },
+    onError: () => toast({ title: '创建上传链接失败', variant: 'destructive' }),
+  });
 
   function getEffectiveBucket(): StorageBucket | null {
     const folderBucketId = (currentFolderInfo as any)?.bucketId ?? null;
@@ -381,7 +407,15 @@ export default function Files() {
   const fileContextMenuCallbacks = {
     onOpen: handleFileClick,
     onDownload: handleDownload,
-    onShare: (file: FileItem) => setShareFileId(file.id),
+    onShare: (file: FileItem) => {
+      setShareFileItem({ id: file.id, isFolder: file.isFolder });
+      setShareFileId(file.id);
+    },
+    onUploadLink: (file: FileItem) => {
+      if (file.isFolder) {
+        setUploadLinkFolder({ id: file.id, name: file.name });
+      }
+    },
     onTags: (file: FileItem) => setTagsFile(file),
     onPermissions: (file: FileItem) => setPermissionFile(file),
     onFolderSettings: (file: FileItem) => setFolderSettingsFile(file),
@@ -852,10 +886,40 @@ export default function Files() {
       {shareFileId && (
         <ShareDialog
           fileId={shareFileId}
+          isFolder={shareFileItem?.isFolder ?? false}
           isPending={shareMutation.isPending}
           onConfirm={handleShareConfirm}
-          onCancel={() => setShareFileId(null)}
+          onCancel={() => { setShareFileId(null); setShareFileItem(null); }}
         />
+      )}
+
+      {/* Upload link folder picker */}
+      {showFolderPicker && (
+        <FolderPickerDialog
+          onConfirm={(id, name) => {
+            setUploadLinkFolder({ id, name });
+            setShowFolderPicker(false);
+          }}
+          onCancel={() => setShowFolderPicker(false)}
+        />
+      )}
+
+      {/* Upload link config dialog */}
+      {uploadLinkFolder && (
+        <UploadLinkDialog
+          folderId={uploadLinkFolder.id}
+          folderName={uploadLinkFolder.name}
+          isPending={createUploadLinkMutation.isPending}
+          onConfirm={(params) =>
+            createUploadLinkMutation.mutate({ folderId: uploadLinkFolder.id, ...params })
+          }
+          onCancel={() => setUploadLinkFolder(null)}
+        />
+      )}
+
+      {/* Migrate bucket dialog */}
+      {showMigrateDialog && (
+        <MigrateBucketDialog onClose={() => setShowMigrateDialog(false)} />
       )}
 
       {renameFile && (
@@ -973,7 +1037,12 @@ export default function Files() {
         onFileClick={handleFileClick}
         onToggleSelect={toggleFileSelection}
         onDownload={handleDownload}
-        onShare={setShareFileId}
+        onShare={(id) => {
+          // Find file in displayFiles to get isFolder
+          const f = displayFiles.find(x => x.id === id);
+          setShareFileItem(f ? { id, isFolder: f.isFolder } : { id, isFolder: false });
+          setShareFileId(id);
+        }}
         onDelete={(file) => deleteMutation.mutate(file.id)}
         onRename={setRenameFile}
         onPreview={setPreviewFile}

@@ -10,6 +10,7 @@ import { formatBytes, formatDate } from '@/utils';
 import { Button } from '@/components/ui/button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { UploadLinkDialog } from '@/components/files/ShareDialog';
+import { FolderPickerDialog } from '@/components/ui/FolderPickerDialog';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Link2, Trash2, Lock, Clock, Download, AlertCircle,
@@ -23,9 +24,7 @@ export default function Shares() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>('download');
-  const [showUploadDialog, setShowUploadDialog] = useState(false);
-  // For upload dialog — needs a folder to be selected; here we let user type a folder ID
-  // In practice this dialog would be triggered from the file browser context menu
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [uploadFolderMeta, setUploadFolderMeta] = useState<{ id: string; name: string } | null>(null);
 
   const { data: shares = [], isLoading } = useQuery({
@@ -54,7 +53,7 @@ export default function Shares() {
         );
       }
       queryClient.invalidateQueries({ queryKey: ['shares'] });
-      setShowUploadDialog(false);
+      setShowFolderPicker(false);
       setUploadFolderMeta(null);
     },
     onError: () => toast({ title: '创建失败', variant: 'destructive' }),
@@ -143,15 +142,7 @@ export default function Shares() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => {
-                // Prompt for folder (simplified — in real use, open folder picker)
-                const name = prompt('请输入目标文件夹名称（仅用于显示）');
-                const id = prompt('请粘贴目标文件夹 ID');
-                if (name && id) {
-                  setUploadFolderMeta({ id, name });
-                  setShowUploadDialog(true);
-                }
-              }}
+              onClick={() => setShowFolderPicker(true)}
             >
               <Upload className="h-3.5 w-3.5 mr-1.5" /> 创建上传链接
             </Button>
@@ -175,8 +166,21 @@ export default function Shares() {
         </div>
       )}
 
-      {/* Upload link creation dialog */}
-      {showUploadDialog && uploadFolderMeta && (
+      {/* Step 1: Pick a folder */}
+      {showFolderPicker && (
+        <FolderPickerDialog
+          title="选择目标文件夹"
+          confirmLabel="下一步：设置链接"
+          onConfirm={(id, name) => {
+            setUploadFolderMeta({ id, name });
+            setShowFolderPicker(false);
+          }}
+          onCancel={() => setShowFolderPicker(false)}
+        />
+      )}
+
+      {/* Step 2: Configure upload link */}
+      {!showFolderPicker && uploadFolderMeta && (
         <UploadLinkDialog
           folderId={uploadFolderMeta.id}
           folderName={uploadFolderMeta.name}
@@ -184,7 +188,7 @@ export default function Shares() {
           onConfirm={(params) =>
             createUploadLinkMutation.mutate({ folderId: uploadFolderMeta.id, ...params })
           }
-          onCancel={() => { setShowUploadDialog(false); setUploadFolderMeta(null); }}
+          onCancel={() => setUploadFolderMeta(null)}
         />
       )}
     </div>

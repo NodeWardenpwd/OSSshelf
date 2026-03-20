@@ -38,7 +38,10 @@ import {
   Save,
   Database,
   Wifi,
+  ArrowRightLeft,
 } from 'lucide-react';
+
+import { MigrateBucketDialog } from '@/components/ui/MigrateBucketDialog';
 
 // ── Provider Badge ────────────────────────────────────────────────────────
 function ProviderBadge({ provider }: { provider: StorageBucket['provider'] }) {
@@ -405,6 +408,7 @@ interface BucketCardProps {
   onSetDefault: (id: string) => void;
   onToggle: (id: string) => void;
   onTest: (id: string) => void;
+  onMigrate: (id: string) => void;
   testResult?: { connected: boolean; message: string } | null;
   testLoading?: boolean;
 }
@@ -416,6 +420,7 @@ function BucketCard({
   onSetDefault,
   onToggle,
   onTest,
+  onMigrate,
   testResult,
   testLoading,
 }: BucketCardProps) {
@@ -541,6 +546,17 @@ function BucketCard({
             <Button
               variant="outline"
               size="sm"
+              onClick={() => onMigrate(bucket.id)}
+              className="text-xs"
+              title="将此存储桶的文件迁移到另一个存储桶"
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
+              迁移文件
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => onDelete(bucket.id)}
               className="text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
             >
@@ -563,6 +579,7 @@ export default function Buckets() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { connected: boolean; message: string }>>({});
+  const [migrateSourceId, setMigrateSourceId] = useState<string | null>(null);
 
   const { data: buckets = [], isLoading } = useQuery({
     queryKey: ['buckets'],
@@ -735,6 +752,7 @@ export default function Buckets() {
               onSetDefault={(id) => setDefaultMutation.mutate(id)}
               onToggle={(id) => toggleMutation.mutate(id)}
               onTest={handleTest}
+              onMigrate={(id) => setMigrateSourceId(id)}
               testResult={testResults[bucket.id] ?? null}
               testLoading={testingId === bucket.id}
             />
@@ -775,6 +793,14 @@ export default function Buckets() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Migrate bucket dialog */}
+      {migrateSourceId && (
+        <MigrateBucketDialog
+          defaultSourceId={migrateSourceId}
+          onClose={() => setMigrateSourceId(null)}
+        />
       )}
 
       {/* Info card */}

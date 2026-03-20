@@ -59,6 +59,8 @@ export interface FileContextMenuCallbacks {
   onCopy: (file: FileItem) => void;
   onCut: (file: FileItem) => void;
   onDelete: (file: FileItem) => void;
+  /** 仅文件夹可用：创建上传链接 */
+  onUploadLink?: (file: FileItem) => void;
 }
 
 export interface BackgroundContextMenuCallbacks {
