@@ -42,7 +42,7 @@ export const TG_MAX_FILE_SIZE = 50 * 1024 * 1024;
 export const TG_CHUNKED_THRESHOLD = 49 * 1024 * 1024;
 
 // Worker 支持的分片上传最大总大小（500MB ≈ 10 块，约 30s 内完成）
-export const TG_MAX_CHUNKED_FILE_SIZE = 500 * 1024 * 1024;
+export const TG_MAX_CHUNKED_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB，Telegram Bot API 真实上限
 
 // 较大文件警告阈值（20MB）- 仍可上传但提示速度较慢
 export const TG_WARN_FILE_SIZE = 20 * 1024 * 1024;
@@ -85,9 +85,12 @@ export async function tgUploadFile(
   formData.append('chat_id', config.chatId);
 
   // 根据方法选择字段名
+  // 直接用 Uint8Array 包装，避免 new Blob([buffer]) 产生额外内存复制
   const fieldName = method === 'sendAudio' ? 'audio' : 'document';
-  const blob = new Blob([fileBuffer], { type: mimeType || 'application/octet-stream' });
-  formData.append(fieldName, blob, fileName);
+  const fileObj = new File([new Uint8Array(fileBuffer)], fileName, {
+    type: mimeType || 'application/octet-stream',
+  });
+  formData.append(fieldName, fileObj, fileName);
 
   // 添加 caption，存储文件元信息
   if (caption) {

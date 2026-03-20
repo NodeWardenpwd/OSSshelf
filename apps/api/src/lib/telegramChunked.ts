@@ -10,15 +10,14 @@
  *   避免一次性加载整个文件到内存。
  *
  * 设计约束：
- *   - Cloudflare Workers CPU 时间限制（Paid: 30s/request），
- *     超大文件（>500MB，即 >10 块）在高负载下可能触发 CPU 超时。
+ *   - 分片在前端循环发起，Worker 每次只处理一片（20MB），无 CPU 超时风险。
  *   - 分片元数据存储在 telegram_file_chunks 表（migration 0006 新增）。
  *   - 原有 telegram_file_refs 仍保留（用于 ≤50MB 文件），两者互不干扰。
  *   - 分片文件在 files 表中有一条正常记录，bucketId 指向 Telegram 桶。
  *   - telegramFileRefs 对分片文件记录 chunkGroupId（虚拟 tgFileId 前缀 "chunked:"）。
  *
  * 分片大小：
- *   TG_CHUNK_SIZE = 49MB（留 1MB 余量，避免因 caption 等元数据超限）
+ *   TG_CHUNK_SIZE = 20MB（Workers 内存安全上限，峰值约 50MB）
  */
 
 import { eq } from 'drizzle-orm';
@@ -26,8 +25,12 @@ import { telegramFileRefs } from '../db/schema';
 import type { DrizzleDb } from '../db';
 import { tgUploadFile, tgGetFileInfo, tgGetDownloadUrl, type TelegramBotConfig } from './telegramClient';
 
-/** 单分片最大字节数（49 MB） */
-export const TG_CHUNK_SIZE = 49 * 1024 * 1024;
+/** 单分片最大字节数（20 MB）
+ *  Workers 内存上限 128MB，tgUploadFile 峰值占用约 2× chunk：
+ *  ArrayBuffer(20MB) + File/Uint8Array(20MB) + 运行时 ≈ 50MB，安全。
+ *  49MB 时峰值 ~100MB+ 会触发 OOM。
+ */
+export const TG_CHUNK_SIZE = 20 * 1024 * 1024;
 
 /**
  * 大文件是否需要分片（> TG_CHUNK_SIZE）

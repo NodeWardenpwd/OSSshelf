@@ -128,14 +128,14 @@ app.post('/create', async (c) => {
 
   // ── Telegram 桶：返回特殊标记，让前端走代理上传路径 ──────────────────
   if (bucketConfig.provider === 'telegram') {
-    // 检查文件大小限制（分片上传支持最大 200MB）
+    // 分片上传支持最大 2GB（Telegram Bot API 真实上限），前端每片 20MB
     if (fileSize > TG_MAX_CHUNKED_FILE_SIZE) {
       return c.json(
         {
           success: false,
           error: {
             code: ERROR_CODES.FILE_TOO_LARGE,
-            message: `Telegram 存储桶文件上限 500MB，当前文件 ${(fileSize / 1024 / 1024).toFixed(1)}MB`,
+            message: `Telegram 存储桶文件上限 2GB，当前文件 ${(fileSize / 1024 / 1024 / 1024).toFixed(2)}GB`,
           },
         },
         413
@@ -149,7 +149,7 @@ app.post('/create', async (c) => {
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + UPLOAD_TASK_EXPIRY).toISOString();
 
-    // 按 TG_CHUNK_SIZE (49MB) 计算分片数，前端逐片上传
+    // 按 TG_CHUNK_SIZE (20MB) 计算分片数，前端逐片上传
     const totalParts = Math.ceil(fileSize / TG_CHUNK_SIZE);
     const uploadId = `telegram-chunked:${groupId}`;
 
@@ -564,18 +564,29 @@ app.post('/part-proxy', async (c) => {
   return c.json({ success: true, data: { partNumber, etag } });
 });
 
-// ── POST /api/tasks/telegram-part-init ──────────────────────────────────
-// 鉴权后返回 botToken / chatId / apiBase，前端直接上传到 Telegram Bot API。
-// Worker 不接触文件内容，彻底规避内存限制。
-app.post('/telegram-part-init', async (c) => {
+// ── POST /api/tasks/telegram-part ────────────────────────────────────────
+// 接收单个分片（≤20MB multipart/form-data），转发到 Telegram Bot API（含代理）。
+// 分片限制 20MB，Worker 峰值内存约 50MB，不会 OOM。
+// metadata（taskId / partNumber / chunkSize）通过 URL query 参数传递。
+app.post('/telegram-part', async (c) => {
   const userId = c.get('userId')!;
-  const body = await c.req.json();
-  const taskId = body.taskId as string;
-  const partNumber = body.partNumber as number;
 
-  if (!taskId || !partNumber) {
+  const taskId = c.req.query('taskId');
+  const partNumberStr = c.req.query('partNumber');
+  const chunkSizeStr = c.req.query('chunkSize');
+
+  if (!taskId || !partNumberStr || !chunkSizeStr) {
     return c.json(
-      { success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: '缺少 taskId 或 partNumber' } },
+      { success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: '缺少 taskId、partNumber 或 chunkSize 查询参数' } },
+      400
+    );
+  }
+
+  const partNumber = parseInt(partNumberStr, 10);
+  const chunkSize = parseInt(chunkSizeStr, 10);
+  if (isNaN(partNumber) || partNumber < 1 || isNaN(chunkSize) || chunkSize < 1) {
+    return c.json(
+      { success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: 'partNumber 或 chunkSize 无效' } },
       400
     );
   }
@@ -602,6 +613,8 @@ app.post('/telegram-part-init', async (c) => {
     return c.json({ success: false, error: { code: ERROR_CODES.TASK_EXPIRED, message: '上传任务已过期' } }, 410);
   }
 
+  const groupId = task.uploadId.slice('telegram-chunked:'.length);
+
   const bucket = await db
     .select()
     .from(storageBuckets)
@@ -613,68 +626,38 @@ app.post('/telegram-part-init', async (c) => {
   }
 
   const botToken = await decryptSecret(bucket.accessKeyId, encKey);
-  const apiBase = bucket.endpoint || 'https://api.telegram.org';
-  const groupId = task.uploadId.slice('telegram-chunked:'.length);
-
-  return c.json({
-    success: true,
-    data: {
-      botToken,
-      chatId: bucket.bucketName,
-      apiBase,
-      groupId,
-      fileName: task.fileName,
-      mimeType: task.mimeType,
-      totalParts: task.totalParts,
-    },
-  });
-});
-
-// ── POST /api/tasks/telegram-part-done ──────────────────────────────────
-// 前端直接上传完一片后，把 tgFileId 和 chunkSize 报告给 Worker 写 DB。
-app.post('/telegram-part-done', async (c) => {
-  const userId = c.get('userId')!;
-  const body = await c.req.json();
-  const { taskId, partNumber, tgFileId, chunkSize } = body as {
-    taskId: string;
-    partNumber: number;
-    tgFileId: string;
-    chunkSize: number;
+  const tgConfig: TelegramBotConfig = {
+    botToken,
+    chatId: bucket.bucketName,
+    apiBase: bucket.endpoint || undefined,
   };
 
-  if (!taskId || !partNumber || !tgFileId || !chunkSize) {
+  // 读取裸二进制请求体（≤20MB，安全）
+  const chunkBuffer = await c.req.arrayBuffer();
+  if (!chunkBuffer || chunkBuffer.byteLength === 0) {
+    return c.json({ success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: '请求体为空' } }, 400);
+  }
+
+  const chunkFileName = `${task.fileName}.part${String(partNumber).padStart(3, '0')}`;
+  const caption = `📦 ${task.fileName} [${partNumber}/${task.totalParts}]\n🗂 OSSshelf chunk | group:${groupId.slice(0, 8)}`;
+
+  let tgFileId: string;
+  try {
+    const result = await tgUploadFile(tgConfig, chunkBuffer, chunkFileName, task.mimeType, caption);
+    tgFileId = result.fileId;
+  } catch (e: any) {
     return c.json(
-      { success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: '缺少必要参数' } },
-      400
+      { success: false, error: { code: 'TG_UPLOAD_ERROR', message: e?.message || 'Telegram 上传分片失败' } },
+      500
     );
   }
 
-  const db = getDb(c.env.DB);
-
-  const task = await db
-    .select()
-    .from(uploadTasks)
-    .where(and(eq(uploadTasks.id, taskId), eq(uploadTasks.userId, userId)))
-    .get();
-
-  if (!task) {
-    return c.json({ success: false, error: { code: ERROR_CODES.NOT_FOUND, message: '任务不存在' } }, 404);
-  }
-  if (!task.uploadId?.startsWith('telegram-chunked:')) {
-    return c.json(
-      { success: false, error: { code: ERROR_CODES.VALIDATION_ERROR, message: '非 Telegram 分片上传任务' } },
-      400
-    );
-  }
-
-  const groupId = task.uploadId.slice('telegram-chunked:'.length);
   const now = new Date().toISOString();
-
   await (db as any).run(
     `INSERT OR REPLACE INTO telegram_file_chunks
        (id, group_id, chunk_index, tg_file_id, chunk_size, bucket_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [crypto.randomUUID(), groupId, partNumber - 1, tgFileId, chunkSize, task.bucketId, now]
+    [crypto.randomUUID(), groupId, partNumber - 1, tgFileId, chunkBuffer.byteLength, task.bucketId, now]
   );
 
   const uploadedParts: Array<{ partNumber: number; etag: string }> = JSON.parse(task.uploadedParts || '[]');
