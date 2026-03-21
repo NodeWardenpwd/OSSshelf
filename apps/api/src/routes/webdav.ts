@@ -378,8 +378,9 @@ async function findFileByPath(db: ReturnType<typeof getDb>, userId: string, path
 
   for (const part of parts) {
     // 同时尝试原始值（匹配 WebDAV 上传的编码名）和 decoded 值（匹配非 WebDAV 上传的中文名）
+    // 优先匹配 decoded 值（原始中文），因为用户更可能通过 Web 界面创建文件夹
     const decodedPart = safeDecodeURIComponent(part);
-    const nameCandidates = Array.from(new Set([part, decodedPart]));
+    const nameCandidates = decodedPart !== part ? [decodedPart, part] : [part];
 
     let found: File | undefined;
     for (const namePart of nameCandidates) {
@@ -468,13 +469,17 @@ async function handlePut(c: AppContext, userId: string, path: string) {
           const folderId = crypto.randomUUID();
           const now = new Date().toISOString();
           const bucketCfg = await resolveBucketConfig(db, userId, encKeyP, null, currentParentId);
+          
+          // 使用解码后的名称存储，避免与 Web 界面创建的文件夹重复
+          const decodedPart = safeDecodeURIComponent(part);
+          const decodedPath = currentPath.split('/').map(p => safeDecodeURIComponent(p)).join('/');
 
           await db.insert(files).values({
             id: folderId,
             userId,
             parentId: currentParentId,
-            name: part,
-            path: currentPath,
+            name: decodedPart,
+            path: decodedPath,
             type: 'folder',
             size: 0,
             r2Key: `folders/${folderId}`,
@@ -588,13 +593,17 @@ async function handleMkcol(c: AppContext, userId: string, path: string) {
 
   const folderId = crypto.randomUUID();
   const now = new Date().toISOString();
+  
+  // 使用解码后的名称存储，避免与 Web 界面创建的文件夹重复
+  const decodedFolderName = safeDecodeURIComponent(folderName);
+  const decodedPath = normalizedPath.split('/').map(p => safeDecodeURIComponent(p)).join('/');
 
   await db.insert(files).values({
     id: folderId,
     userId,
     parentId,
-    name: folderName,
-    path: normalizedPath,
+    name: decodedFolderName,
+    path: decodedPath,
     type: 'folder',
     size: 0,
     r2Key: `folders/${folderId}`,

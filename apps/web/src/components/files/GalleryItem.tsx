@@ -26,7 +26,7 @@ export function GalleryItem({ file, token, onClick, onDelete, onContextMenu }: G
     >
       <img
         src={filesApi.previewUrl(file.id, token)}
-        alt={file.name}
+        alt={decodeFileName(file.name)}
         className="w-full block object-cover"
         loading="lazy"
       />

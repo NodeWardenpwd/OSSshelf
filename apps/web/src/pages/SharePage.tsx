@@ -11,7 +11,7 @@ import { shareApi, type ShareChildFile, type UploadLinkInfo } from '@/services/a
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { formatBytes, formatDate } from '@/utils';
+import { formatBytes, formatDate, decodeFileName } from '@/utils';
 import {
   Download,
   Lock,
@@ -174,7 +174,7 @@ function DownloadSharePage({ shareId }: { shareId: string }) {
             <div className="bg-muted/30 border-b flex items-center justify-center p-6 min-h-[180px]">
               <img
                 src={shareApi.previewUrl(shareId, enteredPw)}
-                alt={share.file.name}
+                alt={decodeFileName(share.file.name)}
                 className="max-h-48 max-w-full object-contain rounded"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
@@ -188,7 +188,7 @@ function DownloadSharePage({ shareId }: { shareId: string }) {
           )}
           <div className="p-5 space-y-4">
             <div>
-              <h1 className="font-semibold text-base break-all">{share.file?.name}</h1>
+              <h1 className="font-semibold text-base break-all">{decodeFileName(share.file?.name)}</h1>
               <ShareMeta share={share} />
             </div>
             <Button
@@ -210,7 +210,7 @@ function DownloadSharePage({ shareId }: { shareId: string }) {
                 <FolderOpen className="h-5 w-5 text-amber-500" />
               </div>
               <div className="flex-1 min-w-0">
-                <h1 className="font-semibold text-base break-all">{share.file?.name}</h1>
+                <h1 className="font-semibold text-base break-all">{decodeFileName(share.file?.name)}</h1>
                 <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
                   <span>{children.length} 个项目</span>
                   <ShareMeta share={share} inline />
@@ -286,7 +286,7 @@ function DownloadSharePage({ shareId }: { shareId: string }) {
                   <FileIcon mimeType={child.mimeType} isFolder={child.isFolder} size="sm" />
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate font-medium">{child.name}</p>
+                    <p className="text-sm truncate font-medium">{decodeFileName(child.name)}</p>
                     <p className="text-xs text-muted-foreground">
                       {child.isFolder ? '文件夹' : formatBytes(child.size)}
                       <span className="mx-1.5">·</span>
@@ -496,7 +496,7 @@ function UploadLinkPage({ token }: { token: string }) {
                     {entry.status === 'pending' && <File className="h-4 w-4 text-muted-foreground" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate">{entry.file.name}</p>
+                    <p className="text-sm truncate">{decodeFileName(entry.file.name)}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-xs text-muted-foreground">{formatBytes(entry.file.size)}</p>
                       {entry.status === 'uploading' && (

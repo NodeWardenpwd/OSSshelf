@@ -66,7 +66,7 @@ export function GridItem({
         {isImage ? (
           <img
             src={filesApi.previewUrl(file.id, token)}
-            alt={file.name}
+            alt={decodeFileName(file.name)}
             className="w-full h-full object-cover"
             onError={(e) => {
               (e.target as any).style.display = 'none';
