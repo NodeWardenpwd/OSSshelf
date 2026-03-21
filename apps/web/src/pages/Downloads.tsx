@@ -162,7 +162,7 @@ export default function Downloads() {
     queryKey: ['buckets'],
     queryFn: () => bucketsApi.list().then(r => r.data.data),
   });
-  const buckets = bucketsRes?.items ?? [];
+  const buckets = bucketsRes ?? [];
 
   const { data: result, isLoading, refetch } = useQuery({
     queryKey: ['downloads'],
@@ -292,7 +292,7 @@ export default function Downloads() {
                   onChange={e => setBucketId(e.target.value || null)}
                 >
                   <option value="">默认存储桶</option>
-                  {buckets.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  {buckets.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>
             )}
