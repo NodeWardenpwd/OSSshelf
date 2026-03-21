@@ -27,6 +27,7 @@ import {
   Database,
   User,
   Upload,
+  FolderOpen,
 } from 'lucide-react';
 import type { ItemProps } from '@/types/files';
 
@@ -80,6 +81,13 @@ export function ListItem({
           {tags && tags.length > 0 && <FileTagsDisplay tags={tags} size="xs" onTagClick={onTagClick} />}
         </div>
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+          {(file as any).folderPath && (file as any).folderPath !== '/' && (
+            <span className="inline-flex items-center gap-0.5 text-primary/70">
+              <FolderOpen className="h-2.5 w-2.5" />
+              <span className="truncate max-w-[120px] sm:max-w-[200px]">{(file as any).folderPath}</span>
+              <span className="opacity-40">·</span>
+            </span>
+          )}
           {file.isFolder ? '文件夹' : formatBytes(file.size)} · {formatDate(file.updatedAt)}
           {file.mimeType && !file.isFolder && <span className="opacity-40 hidden sm:inline">{file.mimeType}</span>}
           {(file as any).bucket && (

@@ -289,16 +289,6 @@ ossshelf/
 | updated_at    | TEXT    | 更新时间    |
 | completed_at  | TEXT    | 完成时间    |
 
-#### webdav_sessions (WebDAV 会话表)
-
-| 字段       | 类型 | 说明     |
-| ---------- | ---- | -------- |
-| id         | TEXT | 主键     |
-| user_id    | TEXT | 用户 ID  |
-| token      | TEXT | 会话令牌 |
-| expires_at | TEXT | 过期时间 |
-| created_at | TEXT | 创建时间 |
-
 #### user_devices (用户设备表)
 
 | 字段        | 类型 | 说明         |

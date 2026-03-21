@@ -151,60 +151,50 @@ function escapeXml(str: string): string {
 
 type FileRow = typeof files.$inferSelect;
 
-const pathCache = new Map<string, string>();
+const folderCache = new Map<string, { name: string; parentId: string | null }>();
 
 function clearPathCache() {
-  pathCache.clear();
+  folderCache.clear();
 }
 
-async function buildLogicalPath(
-  db: ReturnType<typeof getDb>,
-  userId: string,
-  parentId: string | null,
-  fileName: string
-): Promise<string> {
+async function preloadFolderCache(db: ReturnType<typeof getDb>, userId: string): Promise<void> {
+  const allFolders = await db
+    .select({ id: files.id, name: files.name, parentId: files.parentId })
+    .from(files)
+    .where(and(eq(files.userId, userId), eq(files.isFolder, true), isNull(files.deletedAt)))
+    .all();
+
+  for (const folder of allFolders) {
+    folderCache.set(folder.id, { name: folder.name, parentId: folder.parentId });
+  }
+}
+
+function buildLogicalPathFromCache(parentId: string | null, fileName: string): string {
   if (!parentId) {
     return `/${fileName}`;
   }
 
-  const cacheKey = `${parentId}:${fileName}`;
-  const cachedPath = pathCache.get(cacheKey);
-  if (cachedPath) {
-    return cachedPath;
+  const pathParts: string[] = [fileName];
+  let currentId: string | null = parentId;
+
+  while (currentId) {
+    const folder = folderCache.get(currentId);
+    if (!folder) break;
+    pathParts.unshift(folder.name);
+    currentId = folder.parentId;
   }
 
-  const parent = await db
-    .select()
-    .from(files)
-    .where(and(eq(files.id, parentId), eq(files.userId, userId), isNull(files.deletedAt)))
-    .get();
-
-  if (!parent) {
-    const result = `/${fileName}`;
-    pathCache.set(cacheKey, result);
-    return result;
-  }
-
-  const parentPath = await buildLogicalPath(db, userId, parent.parentId, parent.name);
-  const result = `${parentPath}/${fileName}`;
-  pathCache.set(cacheKey, result);
-  return result;
+  return '/' + pathParts.join('/');
 }
 
-async function buildItemsWithLogicalPaths(
-  db: ReturnType<typeof getDb>,
-  userId: string,
-  items: FileRow[]
-): Promise<FileRow[]> {
-  const result: FileRow[] = [];
-  for (const file of items) {
-    const logicalPath = await buildLogicalPath(db, userId, file.parentId, file.name);
-    result.push({
+function buildItemsWithLogicalPaths(items: FileRow[]): FileRow[] {
+  return items.map((file) => {
+    const logicalPath = buildLogicalPathFromCache(file.parentId, file.name);
+    return {
       ...file,
       path: file.isFolder ? logicalPath + '/' : logicalPath,
-    });
-  }
-  return result;
+    };
+  });
 }
 
 /**
@@ -273,6 +263,7 @@ async function handlePropfind(c: AppContext, userId: string, path: string, rawPa
   const isRoot = path === '/' || path === '';
 
   clearPathCache();
+  await preloadFolderCache(db, userId);
 
   const xmlHeaders = {
     'Content-Type': 'application/xml; charset=utf-8',
@@ -301,7 +292,7 @@ async function handlePropfind(c: AppContext, userId: string, path: string, rawPa
     .where(and(eq(files.userId, userId), parentCondition, isNull(files.deletedAt)))
     .all();
 
-  const items = await buildItemsWithLogicalPaths(db, userId, rawItems);
+  const items = buildItemsWithLogicalPaths(rawItems);
 
   if (depth === '0') {
     if (isRoot) {
@@ -312,7 +303,7 @@ async function handlePropfind(c: AppContext, userId: string, path: string, rawPa
     } else {
       const current = await findFileByPath(db, userId, path);
       if (current) {
-        const currentWithLogicalPath = await buildItemsWithLogicalPaths(db, userId, [current]);
+        const currentWithLogicalPath = buildItemsWithLogicalPaths([current]);
         items.unshift(...currentWithLogicalPath);
       }
       return new Response(buildPropfindXML(items, rawPath, false), {

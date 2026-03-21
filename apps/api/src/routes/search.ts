@@ -7,6 +7,7 @@
  * - 高级条件搜索
  * - 搜索建议
  * - 最近搜索记录
+ * - 显示文件所属文件夹路径
  */
 
 import { Hono } from 'hono';
@@ -16,6 +17,7 @@ import { authMiddleware } from '../middleware/auth';
 import { ERROR_CODES } from '@osshelf/shared';
 import type { Env, Variables } from '../types/env';
 import { z } from 'zod';
+import { buildFolderPath, clearFilePathCache } from '../lib/utils';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use('*', authMiddleware);
@@ -207,6 +209,8 @@ app.get('/', async (c) => {
   const offset = (page - 1) * limit;
   const paginatedResults = results.slice(offset, offset + limit);
 
+  clearFilePathCache();
+
   const bucketIds = [...new Set(paginatedResults.map((f) => f.bucketId).filter(Boolean))] as string[];
   const bucketMap: Record<string, { id: string; name: string; provider: string }> = {};
   for (const bid of bucketIds) {
@@ -230,11 +234,17 @@ app.get('/', async (c) => {
     tagsByFile[tag.fileId].push(tag);
   }
 
-  const itemsWithMeta = paginatedResults.map((f) => ({
-    ...f,
-    bucket: f.bucketId ? (bucketMap[f.bucketId] ?? null) : null,
-    tags: tagsByFile[f.id] || [],
-  }));
+  const itemsWithMeta = await Promise.all(
+    paginatedResults.map(async (f) => {
+      const folderPath = await buildFolderPath(db, userId, f.parentId);
+      return {
+        ...f,
+        bucket: f.bucketId ? (bucketMap[f.bucketId] ?? null) : null,
+        tags: tagsByFile[f.id] || [],
+        folderPath,
+      };
+    })
+  );
 
   const aggregations = {
     types: {} as Record<string, number>,
