@@ -15,6 +15,7 @@
 - [存储桶迁移接口](#存储桶迁移接口)
 - [预签名上传接口](#预签名上传接口)
 - [分享接口](#分享接口)
+- [文件直链接口](#文件直链接口)
 - [批量操作接口](#批量操作接口)
 - [搜索接口](#搜索接口)
 - [权限与标签接口](#权限与标签接口)
@@ -818,6 +819,165 @@ Authorization: Bearer <token>
 
 ```http
 DELETE /api/share/<shareId>
+Authorization: Bearer <token>
+```
+
+### 分享预览（公开，支持图片/视频/音频/PDF/文本）
+
+```http
+GET /api/share/<shareId>/preview?password=<密码>
+```
+
+返回文件内容，用于在线预览。
+
+### 分享流式预览（公开，视频/音频）
+
+```http
+GET /api/share/<shareId>/stream?password=<密码>
+```
+
+支持 Range 请求，适用于视频/音频流式播放。
+
+### 分享文本内容（公开）
+
+```http
+GET /api/share/<shareId>/raw?password=<密码>
+```
+
+返回文本文件内容（限 10MB 以内）。
+
+### 文件夹分享子文件预览（公开）
+
+```http
+GET /api/share/<shareId>/file/<fileId>/preview?password=<密码>
+```
+
+预览文件夹分享中的单个文件。
+
+### 文件夹分享子文件流式预览（公开）
+
+```http
+GET /api/share/<shareId>/file/<fileId>/stream?password=<密码>
+```
+
+流式预览文件夹分享中的视频/音频文件。
+
+### 文件夹分享子文件文本内容（公开）
+
+```http
+GET /api/share/<shareId>/file/<fileId>/raw?password=<密码>
+```
+
+获取文件夹分享中文本文件的内容。
+
+---
+
+## 文件直链接口
+
+路由文件: `apps/api/src/routes/directLink.ts`
+
+文件直链允许为文件生成公开访问链接，无需登录即可下载或预览文件。
+
+### 创建直链
+
+```http
+POST /api/direct
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "fileId": "file-id",
+  "expiresAt": "2024-12-31T23:59:59Z"
+}
+```
+
+**参数说明**:
+
+| 参数 | 说明 |
+|------|------|
+| `fileId` | 文件 ID（必填） |
+| `expiresAt` | 过期时间（可选，默认 7 天） |
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "token": "uuid-token",
+    "fileId": "file-id",
+    "fileName": "example.pdf",
+    "directUrl": "https://your-domain.com/api/direct/uuid-token",
+    "expiresAt": "2024-12-31T23:59:59Z",
+    "createdAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+### 获取文件的直链信息
+
+```http
+GET /api/direct/file/<fileId>
+Authorization: Bearer <token>
+```
+
+返回指定文件的直链信息，如果未创建直链则返回 `null`。
+
+### 通过直链下载文件（公开）
+
+```http
+GET /api/direct/<token>
+```
+
+无需认证，直接下载文件。
+
+### 通过直链预览文件（公开）
+
+```http
+GET /api/direct/<token>/preview
+```
+
+无需认证，在线预览文件（支持图片、视频、音频、PDF、文本等）。
+
+### 获取直链信息（公开）
+
+```http
+GET /api/direct/<token>/info
+```
+
+返回直链对应的文件信息（文件名、大小、MIME 类型、过期时间）。
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "file-id",
+    "name": "example.pdf",
+    "size": 1048576,
+    "mimeType": "application/pdf",
+    "directLinkExpiresAt": "2024-12-31T23:59:59Z"
+  }
+}
+```
+
+### 更新直链有效期
+
+```http
+PUT /api/direct/<fileId>
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "expiresAt": "2024-12-31T23:59:59Z"
+}
+```
+
+### 删除直链
+
+```http
+DELETE /api/direct/<fileId>
 Authorization: Bearer <token>
 ```
 

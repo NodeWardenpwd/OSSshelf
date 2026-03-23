@@ -782,4 +782,27 @@ export const previewApi = {
     ),
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Direct Link (直链)
+// ─────────────────────────────────────────────────────────────────────────────
+export interface DirectLinkInfo {
+  token: string;
+  fileId: string;
+  fileName: string;
+  directUrl: string;
+  expiresAt: string;
+}
+
+export const directLinkApi = {
+  create: (fileId: string, expiresAt?: string) =>
+    api.post<ApiResponse<DirectLinkInfo>>('/api/direct', { fileId, expiresAt }),
+  get: (fileId: string) => api.get<ApiResponse<DirectLinkInfo | null>>(`/api/direct/file/${fileId}`),
+  delete: (fileId: string) => api.delete<ApiResponse<{ message: string }>>(`/api/direct/${fileId}`),
+  update: (fileId: string, expiresAt?: string) =>
+    api.put<ApiResponse<DirectLinkInfo>>(`/api/direct/${fileId}`, { expiresAt }),
+  directUrl: (token: string) => `${import.meta.env.VITE_API_URL || ''}/api/direct/${token}`,
+  previewUrl: (token: string) => `${import.meta.env.VITE_API_URL || ''}/api/direct/${token}/preview`,
+  infoUrl: (token: string) => `${import.meta.env.VITE_API_URL || ''}/api/direct/${token}/info`,
+};
+
 export default api;

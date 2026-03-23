@@ -51,6 +51,8 @@ export const files = sqliteTable(
     updatedAt: text('updated_at').notNull(),
     deletedAt: text('deleted_at'),
     bucketId: text('bucket_id'),
+    directLinkToken: text('direct_link_token').unique(),
+    directLinkExpiresAt: text('direct_link_expires_at'),
   },
   (table) => ({
     userParentIdx: index('idx_files_user_parent_active').on(table.userId, table.parentId),
@@ -61,6 +63,7 @@ export const files = sqliteTable(
     userUpdatedIdx: index('idx_files_user_updated').on(table.userId, table.updatedAt),
     userSizeIdx: index('idx_files_user_size').on(table.userId, table.size),
     hashIdx: index('idx_files_hash').on(table.hash),
+    directLinkTokenIdx: index('idx_files_direct_link_token').on(table.directLinkToken),
   })
 );
 

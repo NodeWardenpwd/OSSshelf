@@ -56,6 +56,7 @@ import { cn, decodeFileName } from '@/utils';
 
 import { NewFolderDialog, NewFileDialog, FILE_TEMPLATES, ShareDialog, FileListContainer } from '@/components/files';
 import { UploadLinkDialog } from '@/components/files/ShareDialog';
+import { DirectLinkDialog } from '@/components/files/DirectLinkDialog';
 import { FolderPickerDialog } from '@/components/ui/FolderPickerDialog';
 import { MigrateBucketDialog } from '@/components/ui/MigrateBucketDialog';
 import { useFileMutations } from '@/hooks/useFileMutations';
@@ -135,6 +136,7 @@ export default function Files() {
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [showMigrateDialog, setShowMigrateDialog] = useState(false);
   const [shareFileItem, setShareFileItem] = useState<{ id: string; isFolder: boolean } | null>(null);
+  const [directLinkFile, setDirectLinkFile] = useState<{ id: string; name: string } | null>(null);
 
   // ── Phase 7: 搜索历史 ────────────────────────────────────────────────────
   const [showSearchHistory, setShowSearchHistory] = useState(false);
@@ -433,6 +435,11 @@ export default function Files() {
     onUploadLink: (file: FileItem) => {
       if (file.isFolder) {
         setUploadLinkFolder({ id: file.id, name: file.name });
+      }
+    },
+    onDirectLink: (file: FileItem) => {
+      if (!file.isFolder) {
+        setDirectLinkFile({ id: file.id, name: file.name });
       }
     },
     onTags: (file: FileItem) => setTagsFile(file),
@@ -1145,6 +1152,15 @@ export default function Files() {
 
       {/* Migrate bucket dialog */}
       {showMigrateDialog && <MigrateBucketDialog onClose={() => setShowMigrateDialog(false)} />}
+
+      {/* Direct link dialog */}
+      {directLinkFile && (
+        <DirectLinkDialog
+          fileId={directLinkFile.id}
+          fileName={directLinkFile.name}
+          onClose={() => setDirectLinkFile(null)}
+        />
+      )}
 
       {renameFile && (
         <RenameDialog

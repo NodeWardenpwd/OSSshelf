@@ -30,6 +30,7 @@ import {
   Clipboard,
   Link2,
   FilePlus,
+  Link,
 } from 'lucide-react';
 
 export function useFileContextMenu() {
@@ -57,6 +58,13 @@ export function useFileContextMenu() {
           label: file.isFolder ? '分享文件夹' : '分享',
           icon: <Share2 className="h-4 w-4" />,
           action: () => callbacks.onShare(file),
+        },
+        {
+          id: 'directLink',
+          label: '直链管理',
+          icon: <Link className="h-4 w-4" />,
+          action: () => callbacks.onDirectLink?.(file),
+          disabled: file.isFolder,
         },
         {
           id: 'uploadLink',

@@ -106,6 +106,7 @@ ossshelf/
 │   │   │   │   ├── preview.ts      # 文件预览
 │   │   │   │   ├── search.ts       # 文件搜索
 │   │   │   │   ├── share.ts        # 文件分享
+│   │   │   │   ├── directLink.ts   # 文件直链
 │   │   │   │   ├── tasks.ts        # 上传任务
 │   │   │   │   ├── telegram.ts     # Telegram 存储
 │   │   │   │   └── webdav.ts       # WebDAV 协议
@@ -188,11 +189,13 @@ ossshelf/
 | `allowedMimeTypes` | TEXT | - | 文件夹允许的上传类型 |
 | `refCount` | INTEGER | 1 | 引用计数（去重机制） |
 | `bucketId` | TEXT | - | 所属存储桶 ID |
+| `directLinkToken` | TEXT | - | 直链访问令牌（唯一） |
+| `directLinkExpiresAt` | TEXT | - | 直链过期时间 |
 | `createdAt` | TEXT | - | 创建时间 |
 | `updatedAt` | TEXT | - | 更新时间 |
 | `deletedAt` | TEXT | - | 删除时间 (回收站) |
 
-**索引**: `idx_files_user_parent_active`, `idx_files_user_deleted`, `idx_files_user_type`, `idx_files_user_mime`, `idx_files_user_created`, `idx_files_user_updated`, `idx_files_user_size`, `idx_files_hash`
+**索引**: `idx_files_user_parent_active`, `idx_files_user_deleted`, `idx_files_user_type`, `idx_files_user_mime`, `idx_files_user_created`, `idx_files_user_updated`, `idx_files_user_size`, `idx_files_hash`, `idx_files_direct_link_token`
 
 #### storage_buckets (存储桶表)
 
@@ -462,6 +465,7 @@ ossshelf/
 | `/api/files` | files.ts | 文件管理 |
 | `/api/buckets` | buckets.ts | 存储桶管理 |
 | `/api/share` | share.ts | 文件分享 |
+| `/api/direct` | directLink.ts | 文件直链 |
 | `/api/presign` | presign.ts | 预签名 URL |
 | `/api/tasks` | tasks.ts | 上传任务 |
 | `/api/downloads` | downloads.ts | 离线下载 |
